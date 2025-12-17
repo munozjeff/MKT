@@ -1,8 +1,8 @@
 {
-    "version": "1.0.5",
-    "build": "20251217_installer_fix",
+    "version": "1.0.6",
+    "build": "20251217_run_fix",
     "release_date": "2025-12-17",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip",
-    "release_notes": "✨ Versión 1.0.5\n\n✅ Instalador mejorado (install.bat) para mayor estabilidad.\n✅ Verificación estricta de archivos: Solo se actualiza código fuente.\n✅ Protección de datos de usuario garantizada."
+    "release_notes": "🚑 Hotfix v1.0.6\n\n✅ Solucionado error crítico al iniciar la aplicación (run.bat).\n✅ Compatibilidad mejorada con consola de comandos de Windows."
 }
