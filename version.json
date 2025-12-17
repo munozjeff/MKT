@@ -1,8 +1,8 @@
 {
-    "version": "1.0.3",
-    "build": "20251217_final_test",
+    "version": "1.0.4",
+    "build": "20251217_clean",
     "release_date": "2025-12-17",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip",
-    "release_notes": "🚀 Versión 1.0.3 - Prueba Final de Actualización\n\n✅ Verificación de reinicio automático exitoso.\n✅ Sistema totalmente operativo."
+    "release_notes": "✨ Versión 1.0.4 - Optimización y Limpieza\n\n✅ Proyecto más ligero: Eliminados archivos antiguos y scripts en desuso.\n✅ Rendimiento mejorado en el inicio.\n✅ Estabilidad general incrementada."
 }
