@@ -26,96 +26,67 @@ class UpdateDialog(tk.Toplevel):
     def setup_ui(self):
         """Configura la interfaz del diálogo."""
         self.title("Actualización Disponible")
-        self.geometry("500x300")
+        self.geometry("500x400") # Ventana más alta
         self.resizable(False, False)
         
-        # Frame principal
-        main_frame = ttk.Frame(self, padding=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # 1. Frame de botones (LO EMPAQUETAMOS PRIMERO al fondo de la ventana)
+        btn_frame = ttk.Frame(self, padding=20)
+        btn_frame.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # Icono y título
-        title_frame = ttk.Frame(main_frame)
-        title_frame.pack(fill=tk.X, pady=(0, 20))
+        # Botón Actualizar (Grande y claro - Usando tk.Button nativo)
+        self.btn_update = tk.Button(
+            btn_frame,
+            text="⬇️  DESCARGAR E INSTALAR AHORA",
+            command=self.on_update,
+            font=("Segoe UI", 11, "bold"),
+            bg="#0078D4", # Azul Microsoft
+            fg="white",
+            cursor="hand2",
+            pady=10
+        )
+        self.btn_update.pack(side=tk.TOP, fill=tk.X, pady=(0, 10))
+        
+        # Botón Cancelar
+        ttk.Button(
+            btn_frame,
+            text="Recordármelo más tarde",
+            command=self.on_cancel
+        ).pack(side=tk.TOP)
+
+        # 2. Frame principal (Ocupa el resto del espacio ARRIBA de los botones)
+        main_frame = ttk.Frame(self, padding=20)
+        main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
         # Título
         lbl_title = ttk.Label(
-            title_frame,
-            text="¡Nueva Versión Disponible!",
-            font=("Segoe UI", 14, "bold")
-        )
-        lbl_title.pack()
-        
-        # Información de versión
-        info_frame = ttk.LabelFrame(main_frame, text="Detalles de la Actualización", padding=10)
-        info_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
-        
-        # Nueva versión
-        lbl_new = ttk.Label(
-            info_frame,
-            text=f"Nueva Versión: {self.update_info.get('version', 'N/A')}",
-            font=("Segoe UI", 10, "bold")
-        )
-        lbl_new.pack(anchor=tk.W, pady=5)
-        
-        # Fecha de lanzamiento
-        release_date = self.update_info.get('release_date', 'N/A')
-        lbl_date = ttk.Label(
-            info_frame,
-            text=f"Fecha de Lanzamiento: {release_date}"
-        )
-        lbl_date.pack(anchor=tk.W, pady=2)
-        
-        # Notas de versión (si existen)
-        notes = self.update_info.get('release_notes', '')
-        if notes:
-            lbl_notes_title = ttk.Label(
-                info_frame,
-                text="Novedades:",
-                font=("Segoe UI", 9, "bold")
-            )
-            lbl_notes_title.pack(anchor=tk.W, pady=(10, 5))
-            
-            # Text widget para las notas
-            text_notes = tk.Text(
-                info_frame,
-                height=5,
-                wrap=tk.WORD,
-                relief=tk.FLAT,
-                background="#f0f0f0"
-            )
-            text_notes.insert("1.0", notes)
-            text_notes.config(state=tk.DISABLED)
-            text_notes.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # Mensaje de advertencia
-        lbl_warning = ttk.Label(
             main_frame,
-            text="La aplicación se reiniciará después de actualizar.",
-            foreground="gray",
-            font=("Segoe UI", 8, "italic")
+            text="¡Nueva Versión Disponible!",
+            font=("Segoe UI", 16, "bold")
         )
-        lbl_warning.pack(pady=(0, 10))
+        lbl_title.pack(side=tk.TOP, pady=(0, 10))
         
-        # Botones
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X)
+        # Info de versión
+        info_frame = ttk.LabelFrame(main_frame, text="Detalles", padding=15)
+        info_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
-        btn_cancel = ttk.Button(
-            btn_frame,
-            text="Más Tarde",
-            command=self.on_cancel
-        )
-        btn_cancel.pack(side=tk.RIGHT, padx=5)
+        # Versión y fecha
+        ttk.Label(info_frame, text=f"Versión: {self.update_info.get('version', 'N/A')}", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
+        ttk.Label(info_frame, text=f"Fecha: {self.update_info.get('release_date', 'N/A')}").pack(anchor=tk.W)
         
-        btn_update = ttk.Button(
-            btn_frame,
-            text="Actualizar Ahora",
-            command=self.on_update
-        )
-        btn_update.pack(side=tk.RIGHT, padx=5)
+        # Notas
+        ttk.Label(info_frame, text="Notas:", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, pady=(10, 5))
         
-        # Focus en botón actualizar
-        btn_update.focus_set()
+        text_notes = tk.Text(info_frame, height=5, wrap=tk.WORD, bg="#f5f5f5", relief=tk.FLAT)
+        text_notes.insert("1.0", self.update_info.get('release_notes', 'Sin notas de versión.'))
+        text_notes.config(state=tk.DISABLED)
+        # Scrollbar para las notas
+        scrollbar = ttk.Scrollbar(info_frame, orient="vertical", command=text_notes.yview)
+        text_notes.configure(yscrollcommand=scrollbar.set)
+        
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        text_notes.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.btn_update.focus_set()
         
     def center_window(self):
         """Centra la ventana en la pantalla."""

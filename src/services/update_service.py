@@ -71,7 +71,18 @@ class UpdateService:
                 return False, None
             
             # Descargar información de versión remota
-            response = requests.get(update_url, timeout=10)
+            import time
+            from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+            
+            # Agregar parámetro para romper caché
+            url_parts = list(urlparse(update_url))
+            query = parse_qs(url_parts[4])
+            query['t'] = [str(int(time.time()))]
+            url_parts[4] = urlencode(query, doseq=True)
+            no_cache_url = urlunparse(url_parts)
+            
+            print(f"Checking update from: {no_cache_url}")
+            response = requests.get(no_cache_url, timeout=10)
             response.raise_for_status()
             
             remote_version = response.json()

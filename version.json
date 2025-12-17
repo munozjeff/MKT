@@ -1,8 +1,8 @@
 {
-    "version": "1.0.2",
-    "build": "20251217_v3",
+    "version": "1.0.1",
+    "build": "20251217_stable",
     "release_date": "2025-12-17",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip",
-    "release_notes": "✨ Actualización v1.0.2 - Prueba Final\n\n✅ Corrección de interfaz gráfica en el actualizador.\n✅ Instalación automática de Git mejorada.\n✅ Pruebas de integración exitosas."
+    "release_notes": "✨ Versión 1.0.1 (Estable)\n\n✅ Solución: Ventana de actualización rediseñada y visible.\n✅ Mejora: Instalación automática de dependencias.\n✅ Sistema de actualización robusto con anti-caché."
 }
