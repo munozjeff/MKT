@@ -61,9 +61,9 @@ cd MKT
 2. **Doble click en:** `install.bat`
 
 3. **El instalador automáticamente:**
-   - ✅ Verifica que Python esté instalado
-   - ✅ Ejecuta `CrearEntorno.bat` para configurar librerías
-   - ✅ Instala todas las dependencias necesarias
+   - ✅ Verifica Python y Git (lo instala si falta)
+   - ✅ Ejecuta `CrearEntorno.bat`
+   - ✅ Instala todas las dependencias
    - ✅ Crea carpetas de datos
    - ✅ Verifica ChromeDriver
 

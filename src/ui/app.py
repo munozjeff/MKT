@@ -113,81 +113,109 @@ class App(tk.Tk):
     # ========== MÉTODOS DE ACTUALIZACIÓN ==========
     
     def check_for_updates_silent(self):
-        """Verifica actualizaciones silenciosamente al inicio."""
-        def on_update_available(update_info):
-            # Mostrar diálogo de actualización
-            dialog = UpdateDialog(self, update_info)
-            self.wait_window(dialog)
-            return dialog.result
+        """Verifica actualizaciones en segundo plano al iniciar."""
+        import threading
         
-        def on_update_complete():
-            messagebox.showinfo(
-                "Actualización Completa",
-                "La actualización se instaló correctamente. La aplicación se reiniciará."
-            )
-        
-        def on_error(error_msg):
-            messagebox.showerror(
-                "Error de Actualización",
-                f"No se pudo completar la actualización:\n{error_msg}"
-            )
-        
-        self.update_service.check_and_update_async(
-            on_update_available=on_update_available,
-            on_update_complete=on_update_complete,
-            on_error=on_error
-        )
-    
+        def _check_thread():
+            try:
+                has_update, update_info = self.update_service.check_for_updates()
+                if has_update:
+                    # Programar la UI en el hilo principal
+                    self.after(0, lambda: self._show_update_dialog(update_info))
+            except Exception as e:
+                print(f"Error checking updates: {e}")
+
+        # Iniciar verificación en hilo separado
+        threading.Thread(target=_check_thread, daemon=True).start()
+
     def check_for_updates_manual(self):
         """Verifica actualizaciones manualmente (botón)."""
-        try:
-            has_update, update_info = self.update_service.check_for_updates()
-            
-            if has_update:
-                # Mostrar diálogo
-                dialog = UpdateDialog(self, update_info)
-                self.wait_window(dialog)
-                
-                if dialog.result:
-                    # Usuario aceptó actualizar
-                    self.perform_update(update_info)
-            else:
-                messagebox.showinfo(
-                    "Sin Actualizaciones",
-                    f"Estás usando la última versión ({self.update_service.get_current_version()})"
-                )
-        except Exception as e:
-            messagebox.showerror(
-                "Error",
-                f"No se pudo verificar actualizaciones:\n{str(e)}"
+        import threading
+        
+        # Feedback visual inmediato
+        messagebox.showinfo("Buscando...", "Verificando actualizaciones...")
+        
+        def _check_thread():
+            try:
+                has_update, update_info = self.update_service.check_for_updates()
+                # Volver al hilo principal para mostrar resultados
+                self.after(0, lambda: self._handle_manual_check_result(has_update, update_info))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Error", f"Error verificando: {e}"))
+
+        threading.Thread(target=_check_thread, daemon=True).start()
+
+    def _handle_manual_check_result(self, has_update, update_info):
+        """Maneja el resultado de la verificación manual en el hilo principal."""
+        if has_update:
+            self._show_update_dialog(update_info)
+        else:
+            messagebox.showinfo(
+                "Sin Actualizaciones",
+                f"Estás usando la última versión ({self.update_service.get_current_version()})"
             )
-    
+
+    def _show_update_dialog(self, update_info):
+        """Muestra el diálogo de actualización y maneja la respuesta."""
+        dialog = UpdateDialog(self, update_info)
+        self.wait_window(dialog)
+        
+        if dialog.result:
+            # Si el usuario aceptó, iniciar proceso de actualización
+            self.perform_update(update_info)
+
     def perform_update(self, update_info):
         """Ejecuta el proceso de actualización con barra de progreso."""
-        # Mostrar diálogo de progreso
+        import threading
+        
+        # Diálogo de progreso (modal)
         progress_dialog = UpdateProgressDialog(self)
         
-        def update_progress(value):
-            progress_dialog.update_progress(value, f"Descargando... {value}%")
-        
-        # Descargar
-        progress_dialog.update_progress(0, "Iniciando descarga...")
-        if self.update_service.download_update(update_info, progress_callback=update_progress):
-            # Instalar
-            progress_dialog.update_progress(100, "Instalando actualización...")
-            if self.update_service.install_update():
-                progress_dialog.destroy()
-                messagebox.showinfo(
-                    "Actualización Completa",
-                    "La actualización se instaló correctamente. La aplicación se reiniciará."
+        def _update_progress(value):
+            # Actualizar UI en hilo principal
+            self.after(0, lambda: progress_dialog.update_progress(value, f"Descargando... {value}%"))
+
+        def _install_thread():
+            try:
+                # 1. Descargar
+                self.after(0, lambda: progress_dialog.update_progress(0, "Iniciando descarga..."))
+                
+                success = self.update_service.download_update(
+                    update_info, 
+                    progress_callback=_update_progress
                 )
-                self.update_service.restart_application()
-            else:
-                progress_dialog.destroy()
-                messagebox.showerror("Error", "No se pudo instalar la actualización")
-        else:
-            progress_dialog.destroy()
-            messagebox.showerror("Error", "No se pudo descargar la actualización")
-        
-        self.update_service.cleanup()
+                
+                if not success:
+                    self.after(0, lambda: self._on_update_error(progress_dialog, "Error en la descarga"))
+                    return
+
+                # 2. Instalar
+                self.after(0, lambda: progress_dialog.update_progress(100, "Instalando..."))
+                
+                if self.update_service.install_update():
+                    self.after(0, lambda: self._on_update_success(progress_dialog))
+                else:
+                    self.after(0, lambda: self._on_update_error(progress_dialog, "Error en la instalación"))
+                    
+            except Exception as e:
+                self.after(0, lambda: self._on_update_error(progress_dialog, str(e)))
+            finally:
+                self.update_service.cleanup()
+
+        # Iniciar thread de instalación
+        threading.Thread(target=_install_thread, daemon=True).start()
+
+    def _on_update_success(self, progress_dialog):
+        """Maneja el éxito de la actualización."""
+        progress_dialog.destroy()
+        messagebox.showinfo(
+            "¡Actualización Lista!",
+            "La aplicación se ha actualizado correctamente.\nSe reiniciará ahora."
+        )
+        self.update_service.restart_application()
+
+    def _on_update_error(self, progress_dialog, message):
+        """Maneja errores de actualización."""
+        progress_dialog.destroy()
+        messagebox.showerror("Error de Actualización", message)
 

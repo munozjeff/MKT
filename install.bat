@@ -31,14 +31,32 @@ echo.
 echo [2/5] ⏳ Verificando Git...
 git --version >nul 2>&1
 if errorlevel 1 (
-    echo ⚠️  Git no encontrado. Instalando Git for Windows...
-    echo.
-    echo 👉 Descargando Git...
-    powershell -Command "Start-Process 'https://git-scm.com/download/win' -Wait"
-    echo.
-    echo ⚠️  Instala Git y vuelve a ejecutar este instalador
+    echo ⚠️  Git no encontrado. Intentando instalar automáticamente...
+    
+    rem Verificar si existe Winget
+    winget --version >nul 2>&1
+    if errorlevel 1 (
+        echo ❌ No se encontró Winget. Debes instalar Git manualmente.
+        echo 👉 Descarga: https://git-scm.com/download/win
+        pause
+        exit /b 1
+    )
+    
+    echo 📥 Instalando Git via Winget...
+    echo Pulsa SI si Windows pide permisos de administrador.
+    winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
+    
+    if errorlevel 1 (
+        echo ❌ Error instalando Git.
+        pause
+        exit /b 1
+    )
+    
+    echo ✅ Git instalado correctamente.
+    echo ⚠️  IMPORTANTE: Cierre esta ventana y vuelva a ejecutar install.bat
+    echo    para que los cambios surtan efecto.
     pause
-    exit /b 1
+    exit /b 0
 )
 echo ✅ Git encontrado
 git --version
