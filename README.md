@@ -41,16 +41,39 @@ Sistema automatizado para envío masivo de mensajes por WhatsApp Web con gestió
 
 ## 🚀 Instalación
 
-### Requisitos
+### 📥 Instalación Rápida (Windows)
+
+**La forma más fácil de instalar:**
+
+1. **Descarga el proyecto:**
+   - Ve a: https://github.com/munozjeff/MKT
+   - Click en **"Code"** → **"Download ZIP"**
+   - Extrae en una carpeta
+
+2. **Ejecuta el instalador:**
+   - Doble click en `install.bat`
+   - El instalador hace todo automáticamente
+
+3. **Ejecuta la aplicación:**
+   - Doble click en `run.bat`
+   - ¡Listo! 🎉
+
+📖 **Guía completa:** [docs/INSTALACION.md](docs/INSTALACION.md)
+
+---
+
+### 🔧 Instalación Manual
+
+#### Requisitos
 - Python 3.8 o superior
 - Google Chrome
 - ChromeDriver
 
-### Pasos
+#### Pasos
 
 1. **Clonar el repositorio:**
 ```bash
-git clone https://github.com/TU_USUARIO/MKT.git
+git clone https://github.com/munozjeff/MKT.git
 cd MKT
 ```
 
