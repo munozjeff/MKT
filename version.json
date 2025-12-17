@@ -1,8 +1,8 @@
 {
-    "version": "1.0.0",
-    "build": "20251217",
+    "version": "1.0.1",
+    "build": "20251217_v2",
     "release_date": "2025-12-17",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip",
-    "release_notes": "🎉 Versión inicial del sistema\n- Sistema completo de envío masivo WhatsApp\n- Gestión de campañas y contactos\n- Actualización automática integrada\n- Protección total de datos de usuario"
+    "release_notes": "🚀 Actualización de Prueba v1.0.1\n\n✅ Esta es una prueba del sistema de actualizaciones.\n- Se verifica la detección automática.\n- Se prueba la descarga e instalación."
 }
