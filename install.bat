@@ -61,9 +61,45 @@ if errorlevel 1 (
 echo ✅ Git encontrado
 git --version
 
-REM Ejecutar script de configuración del entorno
+REM ==========================================
+REM PASO 2.5: CLONAR O ACTUALIZAR REPOSITORIO
+REM ==========================================
 echo.
-echo [3/5] 📦 Configurando entorno y librerías...
+echo [3/5] ☁️ Obteniendo código fuente...
+
+REM Verificar si estamos DENTRO del proyecto (si existe main.py o src)
+if exist src\main.py (
+    echo   Estamos dentro de la carpeta del proyecto.
+    echo   Actualizando código...
+    git pull
+) else (
+    REM Verificar si la carpeta MKT ya existe en el directorio actual
+    if exist MKT\src\main.py (
+        echo   Carpeta MKT encontrada. Entrando...
+        cd MKT
+        git pull
+    ) else (
+        echo   Clonando repositorio desde GitHub...
+        git clone https://github.com/munozjeff/MKT.git
+        
+        if errorlevel 1 (
+            echo ❌ ERROR: No se pudo clonar el repositorio.
+            echo Verifique su conexión a internet.
+            pause
+            exit /b 1
+        )
+        
+        echo   Entrando en carpeta MKT...
+        cd MKT
+    )
+)
+
+REM ==========================================
+REM PASO 3: CONFIGURAR ENTORNO
+REM ==========================================
+echo.
+echo [4/5] 📦 Configurando entorno y librerías...
+
 if exist CrearEntorno.bat (
     call CrearEntorno.bat
     if errorlevel 1 (
@@ -72,35 +108,34 @@ if exist CrearEntorno.bat (
         exit /b 1
     )
 ) else (
-    echo ❌ ERROR: No se encontró el archivo CrearEntorno.bat
-    echo Asegúrate de estar en la carpeta correcta.
+    echo ❌ ERROR CRÍTICO: No se encontró CrearEntorno.bat
+    echo El repositorio no se descargó correctamente.
     pause
     exit /b 1
 )
 
-REM Crear directorios necesarios
+REM ==========================================
+REM PASO 4: DIRECTORIOS Y EXTRAS
+REM ==========================================
 echo.
-echo [4/5] 📁 Creando directorios de datos...
+echo [5/5] 📁 Verificando directorios y drivers...
+
 if not exist data mkdir data
 if not exist informes mkdir informes
 if not exist perfiles mkdir perfiles
 if not exist logs mkdir logs
-echo ✅ Directorios creados
+echo ✅ Directorios verificados
 
 REM Verificar ChromeDriver
-echo.
-echo ⏳ Verificando ChromeDriver...
 if not exist "chromedriver.exe" (
     echo.
-    echo ⚠️  IMPORTANTE: ChromeDriver no encontrado
+    echo ⚠️  Falta ChromeDriver
     echo.
-    echo 📋 Para usar el sistema necesitas ChromeDriver:
+    echo Por favor descarga ChromeDriver que coincida con tu Chrome
+    echo y colócalo en esta carpeta:
+    echo %CD%
     echo.
-    echo 1. Ve a: https://chromedriver.chromium.org/downloads
-    echo 2. Descarga la versión que coincida con tu Chrome
-    echo 3. Extrae chromedriver.exe en esta carpeta:
-    echo    %CD%
-    echo.
+    echo Descarga: https://chromedriver.chromium.org/downloads
 ) else (
     echo ✅ ChromeDriver encontrado
 )
@@ -110,14 +145,10 @@ echo ╔════════════════════════
 echo ║                  ✅ INSTALACIÓN COMPLETADA                    ║
 echo ╚═══════════════════════════════════════════════════════════════╝
 echo.
-echo 🎉 El sistema está listo para usar
+echo 🎉 Todo listo!
 echo.
-echo 📝 PRÓXIMOS PASOS:
-echo.
-echo 1. Si no tienes ChromeDriver, descárgalo e instálalo
-echo 2. Ejecuta el sistema con: run.bat
-echo    o directamente: venv\Scripts\python.exe src\main.py
-echo.
-echo 📖 Para más información, consulta el README.md
+echo 👉 Para iniciar:
+echo    Ejecuta el archivo: run.bat
+echo    (Está dentro de la carpeta MKT si acabas de instalar)
 echo.
 pause
