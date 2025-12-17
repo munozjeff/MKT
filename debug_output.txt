@@ -1,0 +1,21 @@
+Driver Path: C:\Users\eivar\Documents\APLICACIONES\MKT\chromedriver.exe
+
+--- Testing: Basic (Only disable-gpu) ---
+SUCCESS: Browser launched.
+SUCCESS: Navigated to Google.
+Browser closed.
+
+--- Testing: Prod Flags (No Sandbox/DevShm) ---
+SUCCESS: Browser launched.
+SUCCESS: Navigated to Google.
+Browser closed.
+
+--- Testing: With New Profile ---
+SUCCESS: Browser launched.
+SUCCESS: Navigated to Google.
+Browser closed.
+
+--- Testing: Stealth Mode ---
+SUCCESS: Browser launched.
+SUCCESS: Navigated to Google.
+Browser closed.

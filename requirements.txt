@@ -1,0 +1,9 @@
+selenium
+pandas
+openpyxl
+Pillow
+faker
+numpy
+requests
+# tk is usually included in python
+

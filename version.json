@@ -1,0 +1,7 @@
+{
+    "version": "1.0.0",
+    "build": "20251217",
+    "release_date": "2025-12-17",
+    "update_url": "https://raw.githubusercontent.com/TU_USUARIO/TU_REPO/main/version.json",
+    "download_url": "https://github.com/TU_USUARIO/TU_REPO/archive/refs/heads/main.zip"
+}
