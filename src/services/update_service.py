@@ -357,9 +357,10 @@ class UpdateService:
             else:
                 # Si se ejecuta con Python
                 executable = sys.executable
-                script = self.root_dir / "main.py"
+                script = self.root_dir / "src" / "main.py"
                 if not script.exists():
-                    script = self.root_dir / "app.py"
+                    # Fallback por si acaso
+                    script = self.root_dir / "src" / "ui" / "app.py"
             
             # Reiniciar
             if getattr(sys, 'frozen', False):
