@@ -1,8 +1,8 @@
 {
-    "version": "1.0.7",
-    "build": "20260207_rotation_mode",
+    "version": "1.1.0",
+    "build": "20260207",
     "release_date": "2026-02-07",
+    "release_notes": "- Nuevo modo de envío: Rotación de perfiles\n- Configuración de cooldown para rotación\n- Corrección en reinicio automático de perfiles",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
-    "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip",
-    "release_notes": "🔄 v1.0.7 - Modo Rotación de Perfiles\n\n✨ Nueva funcionalidad:\n• Nuevo modo de envío 'Rotación' con pool de perfiles\n• Configuración de perfiles simultáneos (N activos a la vez)\n• Límite de mensajes por perfil antes de rotar\n• Cooldown temporal: tiempo mínimo antes de reutilizar un perfil\n• Selección aleatoria sin repetir hasta agotar el pool\n• Garantía de N perfiles activos mientras haya mensajes\n\n🐛 Correcciones:\n• Fix deadlock en rotación de perfiles (RLock)\n• Detección más rápida de perfiles terminados\n• Mejor visualización del progreso [X/Y]\n\n📊 Mejoras UI:\n• Nuevo indicador de progreso [actual/total] en tareas\n• Campos de configuración para modo Rotación"
+    "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
