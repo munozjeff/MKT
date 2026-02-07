@@ -10,6 +10,7 @@ from ...services.campaign_service import CampaignService
 from ...services.contact_service import ContactService
 from ...services.automation_runner import AutomationRunner
 from ...services.distributed_runner import DistributedAutomationRunner
+from ...services.rotation_runner import RotationAutomationRunner
 from ...utils.file_utils import load_excel
 from ..styles import *
 
@@ -52,8 +53,10 @@ class SendView(ttk.Frame):
         
         rb_ind = ttk.Radiobutton(frame_mode, text="Individual", variable=self.var_mode, value="Individual", command=self.on_mode_change)
         rb_ind.pack(side=tk.LEFT, padx=5)
-        rb_dist = ttk.Radiobutton(frame_mode, text="Distribuido (Multi-Perfil)", variable=self.var_mode, value="Distribuido", command=self.on_mode_change)
+        rb_dist = ttk.Radiobutton(frame_mode, text="Distribuido", variable=self.var_mode, value="Distribuido", command=self.on_mode_change)
         rb_dist.pack(side=tk.LEFT, padx=5)
+        rb_rot = ttk.Radiobutton(frame_mode, text="Rotación", variable=self.var_mode, value="Rotacion", command=self.on_mode_change)
+        rb_rot.pack(side=tk.LEFT, padx=5)
         
         # 1. Perfil de Navegador
         self.lbl_profile = ttk.Label(config_frame, text="Perfil:")
@@ -147,6 +150,25 @@ class SendView(ttk.Frame):
         self.ent_pause.insert(0, "10") # Default actualizado
         self.ent_pause.grid(row=11, column=1, **grid_opts)
         
+        # Frame para configuración de Rotación (inicialmente oculto)
+        self.frame_rotation_config = ttk.Frame(config_frame)
+        
+        ttk.Label(self.frame_rotation_config, text="Perfiles Simultáneos:").grid(row=0, column=0, padx=5, pady=2, sticky=tk.W)
+        self.ent_simultaneous = ttk.Entry(self.frame_rotation_config, width=10)
+        self.ent_simultaneous.insert(0, "5")
+        self.ent_simultaneous.grid(row=0, column=1, padx=5, pady=2)
+        
+        ttk.Label(self.frame_rotation_config, text="Mensajes por Perfil:").grid(row=1, column=0, padx=5, pady=2, sticky=tk.W)
+        self.ent_msgs_per_profile = ttk.Entry(self.frame_rotation_config, width=10)
+        self.ent_msgs_per_profile.insert(0, "10")
+        self.ent_msgs_per_profile.grid(row=1, column=1, padx=5, pady=2)
+        
+        ttk.Label(self.frame_rotation_config, text="Cooldown (minutos):").grid(row=2, column=0, padx=5, pady=2, sticky=tk.W)
+        self.ent_profile_cooldown = ttk.Entry(self.frame_rotation_config, width=10)
+        self.ent_profile_cooldown.insert(0, "60")  # Default 1 hora
+        self.ent_profile_cooldown.grid(row=2, column=1, padx=5, pady=2)
+        ttk.Label(self.frame_rotation_config, text="(tiempo antes de reutilizar perfil)", font=("Arial", 8)).grid(row=2, column=2, padx=2, pady=2, sticky=tk.W)
+        
         # Botón Lanzar
         ttk.Button(config_frame, text="LANZAR TAREA", command=self.launch_task).grid(row=15, column=0, columnspan=3, pady=20, sticky="ew")
         
@@ -170,15 +192,21 @@ class SendView(ttk.Frame):
         self.combo_profiles.pack_forget()
         self.btn_refresh.pack_forget()
         self.frame_dist_container.pack_forget()
+        self.frame_rotation_config.grid_forget()
         
         if mode == "Individual":
             self.combo_profiles.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.btn_refresh.pack(side=tk.LEFT, padx=2)
             self.lbl_profile.config(text="Perfil:")
-        else:
+        elif mode == "Distribuido":
             self.frame_dist_container.pack(fill=tk.BOTH, expand=True)
             self.btn_refresh.pack(side=tk.RIGHT, padx=2)
             self.lbl_profile.config(text="Perfiles:")
+        elif mode == "Rotacion":
+            self.frame_dist_container.pack(fill=tk.BOTH, expand=True)
+            self.btn_refresh.pack(side=tk.RIGHT, padx=2)
+            self.lbl_profile.config(text="Perfiles:")
+            self.frame_rotation_config.grid(row=12, column=0, columnspan=3, pady=5, sticky=tk.W)
     
     def toggle_all_profiles(self):
         val = self.var_select_all.get()
@@ -411,7 +439,12 @@ class SendView(ttk.Frame):
         target_profiles = [p for p in all_profiles_objs if p.name in locked_profiles]
         
         # UI Card - Cada tarea en su propio frame
-        task_title = f"Individual: {locked_profiles[0]}" if mode == "Individual" else f"Distribuido ({len(locked_profiles)} perfiles)"
+        if mode == "Individual":
+            task_title = f"Individual: {locked_profiles[0]}"
+        elif mode == "Distribuido":
+            task_title = f"Distribuido ({len(locked_profiles)} perfiles)"
+        else:  # Rotacion
+            task_title = f"Rotación ({len(locked_profiles)} perfiles, {self.ent_simultaneous.get()} simultáneos)"
         task_frame = ttk.LabelFrame(self.task_container, text=task_title)
         task_frame.pack(fill=tk.X, pady=5, anchor=tk.N)  # anchor=tk.N para apilar hacia arriba
         
@@ -433,7 +466,11 @@ class SendView(ttk.Frame):
                     if total > 0:
                         progress['maximum'] = total
                         progress['value'] = idx
-                    lbl_status.config(text=text)
+                        # Mostrar progreso "X de Y" junto con la acción
+                        progress_text = f"[{idx}/{total}] {text}"
+                    else:
+                        progress_text = text
+                    lbl_status.config(text=progress_text)
                 except tk.TclError:
                     # Widget ya fue destruido
                     task_active['active'] = False
@@ -467,7 +504,7 @@ class SendView(ttk.Frame):
                 progress_callback=update_ui,
                 completion_callback=on_complete
             )
-        else:
+        elif mode == "Distribuido":
             runner = DistributedAutomationRunner(
                 browser_profiles=target_profiles, # Lista de perfiles
                 config=config,
@@ -476,6 +513,56 @@ class SendView(ttk.Frame):
                 contact_data=contact_data,
                 campaign=campaign,
                 fallback_campaign=fallback_campaign,  # Nueva: campaña de respaldo
+                progress_callback=update_ui,
+                completion_callback=on_complete
+            )
+        else:  # Rotacion
+            # Validar parámetros de rotación
+            try:
+                simultaneous = int(self.ent_simultaneous.get())
+                msgs_per_profile = int(self.ent_msgs_per_profile.get())
+                cooldown_minutes = int(self.ent_profile_cooldown.get())
+            except ValueError:
+                for p_name in locked_profiles:
+                    self.browser_service.unlock_profile(p_name)
+                messagebox.showerror(MSG_ERROR, "Valores numéricos inválidos para Rotación")
+                return
+            
+            if simultaneous > len(locked_profiles):
+                for p_name in locked_profiles:
+                    self.browser_service.unlock_profile(p_name)
+                messagebox.showerror(MSG_ERROR, f"Perfiles simultáneos ({simultaneous}) no puede ser mayor que perfiles seleccionados ({len(locked_profiles)})")
+                return
+            
+            if simultaneous < 1:
+                for p_name in locked_profiles:
+                    self.browser_service.unlock_profile(p_name)
+                messagebox.showerror(MSG_ERROR, "Debe haber al menos 1 perfil simultáneo")
+                return
+            
+            if msgs_per_profile < 1:
+                for p_name in locked_profiles:
+                    self.browser_service.unlock_profile(p_name)
+                messagebox.showerror(MSG_ERROR, "Debe enviar al menos 1 mensaje por perfil")
+                return
+            
+            if cooldown_minutes < 0:
+                for p_name in locked_profiles:
+                    self.browser_service.unlock_profile(p_name)
+                messagebox.showerror(MSG_ERROR, "El cooldown no puede ser negativo")
+                return
+            
+            runner = RotationAutomationRunner(
+                browser_profiles=target_profiles,
+                simultaneous_profiles=simultaneous,
+                messages_per_profile=msgs_per_profile,
+                profile_cooldown_minutes=cooldown_minutes,
+                config=config,
+                phone_numbers=phones,
+                user_data=user_data,
+                contact_data=contact_data,
+                campaign=campaign,
+                fallback_campaign=fallback_campaign,
                 progress_callback=update_ui,
                 completion_callback=on_complete
             )
