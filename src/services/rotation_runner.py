@@ -10,6 +10,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Set, Optional
 from .whatsapp_service import WhatsAppService
+from .whatsapp_monitor_service import WhatsAppMonitorService
 from .report_service import ReportService
 from ..utils.message_templates import generate_random_message, replace_variables
 from ..models.campaign import Campaign
@@ -274,6 +275,7 @@ class RotationAutomationRunner:
         Envía mensajes hasta alcanzar el límite o quedarse sin cola.
         """
         service = WhatsAppService()
+        monitor_service = None
         self.profile_services[profile.name] = service
         
         try:
@@ -290,6 +292,16 @@ class RotationAutomationRunner:
             
             print(f"[{profile.name}] Listo para enviar.")
             
+            # Inicializar monitor si está configurado
+            monitor_phone = self.config.get("monitor_phone", "")
+            if monitor_phone:
+                monitor_service = WhatsAppMonitorService(
+                    driver=service.driver,
+                    notification_contact=monitor_phone,
+                    profile_name=profile.name
+                )
+                print(f"[{profile.name}] 📱 Monitor activado - Notificaciones a: {monitor_phone}")
+            
             # 3. Procesar mensajes hasta límite o cola vacía
             messages_sent = 0
             
@@ -303,6 +315,21 @@ class RotationAutomationRunner:
                     # Cola vacía, terminar worker
                     break
                 
+                # MONITOREAR MENSAJES NUEVOS ANTES DE CADA ENVÍO
+                monitor_time = 0
+                if monitor_service:
+                    try:
+                        base_interval = int(self.config.get("interval", 20))
+                        max_monitor_time = min(5, base_interval // 2)
+                        monitor_time = monitor_service.monitorear_y_notificar(
+                            service, 
+                            max_time=max_monitor_time
+                        )
+                        if monitor_time > 0:
+                            print(f"[{profile.name}] ⏱ Tiempo de monitoreo: {monitor_time:.1f}s")
+                    except Exception as e:
+                        print(f"[{profile.name}] Error en monitoreo: {e}")
+                
                 # Procesar mensaje
                 self._process_single_message(service, current_phone, profile.name)
                 messages_sent += 1
@@ -313,7 +340,9 @@ class RotationAutomationRunner:
                 # Pausa entre mensajes
                 if not self.stop_event.is_set():
                     base_interval = int(self.config.get("interval", 20))
-                    sleep_time = random.uniform(base_interval * 0.8, base_interval * 1.2)
+                    # Restar el tiempo del monitoreo
+                    adjusted_interval = max(1, base_interval - int(monitor_time))
+                    sleep_time = random.uniform(adjusted_interval * 0.8, adjusted_interval * 1.2)
                     time.sleep(sleep_time)
             
             print(f"[{profile.name}] Completado. Mensajes enviados: {messages_sent}")

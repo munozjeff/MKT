@@ -1,8 +1,8 @@
 {
-    "version": "1.1.0",
-    "build": "20260207",
-    "release_date": "2026-02-07",
-    "release_notes": "- Nuevo modo de envío: Rotación de perfiles\n- Configuración de cooldown para rotación\n- Corrección en reinicio automático de perfiles",
+    "version": "1.3.0",
+    "build": "20260209",
+    "release_date": "2026-02-09",
+    "release_notes": "- Monitor WhatsApp: Notificación de CADA mensaje nuevo\n- Monitor WhatsApp: Soportar búsqueda por nombre de grupo/contacto\n- Monitor WhatsApp: Eliminar prefijo forzado +57\n- Corrección lógica de detección de estados de chat",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

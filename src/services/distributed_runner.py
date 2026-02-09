@@ -8,6 +8,7 @@ import random
 import os
 from concurrent.futures import ThreadPoolExecutor
 from .whatsapp_service import WhatsAppService
+from .whatsapp_monitor_service import WhatsAppMonitorService
 from .report_service import ReportService
 from ..utils.message_templates import generate_random_message, replace_variables
 from ..models.campaign import Campaign
@@ -77,6 +78,7 @@ class DistributedAutomationRunner:
     def _worker_run(self, profile):
         """Lógica de cada worker individual con su propio navegador."""
         service = WhatsAppService()
+        monitor_service = None
         
         with self.active_services_lock:
             self.active_services.append(service)
@@ -95,19 +97,46 @@ class DistributedAutomationRunner:
 
             print(f"[{profile.name}] Listo para enviar.")
             
+            # Inicializar monitor si está configurado
+            monitor_phone = self.config.get("monitor_phone", "")
+            if monitor_phone:
+                monitor_service = WhatsAppMonitorService(
+                    driver=service.driver,
+                    notification_contact=monitor_phone,
+                    profile_name=profile.name
+                )
+                print(f"[{profile.name}] 📱 Monitor activado - Notificaciones a: {monitor_phone}")
+            
             # 3. Procesar cola
             while not self.phone_queue.empty() and not self.stop_event.is_set():
                 try:
                     current_phone = self.phone_queue.get_nowait()
                 except queue.Empty:
                     break
+                
+                # MONITOREAR MENSAJES NUEVOS ANTES DE CADA ENVÍO
+                monitor_time = 0
+                if monitor_service:
+                    try:
+                        base_interval = int(self.config.get("interval", 20))
+                        max_monitor_time = min(5, base_interval // 2)
+                        monitor_time = monitor_service.monitorear_y_notificar(
+                            service, 
+                            max_time=max_monitor_time
+                        )
+                        if monitor_time > 0:
+                            print(f"[{profile.name}] ⏱ Tiempo de monitoreo: {monitor_time:.1f}s")
+                    except Exception as e:
+                        print(f"[{profile.name}] Error en monitoreo: {e}")
                     
                 self._process_single_message(service, current_phone, profile.name)
                 
                 # Pausa entre mensajes (con algo de aleatoriedad individual)
                 if not self.stop_event.is_set():
                     base_interval = int(self.config.get("interval", 20))
-                    sleep_time = random.uniform(base_interval * 0.8, base_interval * 1.2)
+                    # Restar el tiempo del monitoreo
+                    adjusted_interval = max(1, base_interval - int(monitor_time))
+                    sleep_time = random.uniform(adjusted_interval * 0.8, adjusted_interval * 1.2)
                     time.sleep(sleep_time)
                     
         except Exception as e:
