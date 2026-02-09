@@ -209,25 +209,29 @@ class WhatsAppService:
             except Exception as e:
                 print(f"Error click new chat: {e}")
     
-    def search_contact(self, contact_input: str) -> bool:
-        """Busca un contacto o grupo por nombre o número."""
+    def search_contact(self, phone_number: str) -> bool:
+        """Busca un contacto por número de teléfono."""
         try:
-            # Seleccionar campo de búsqueda
+            # Sin sleep inicial innecesario
+            
+            #input_field = self.wait.until(
+            #    EC.presence_of_element_located((By.XPATH, '//p[@class="selectable-text copyable-text x15bjb6t x1n2onr6"]'))
+            #)
             input_field = self.wait.until(
                 EC.presence_of_element_located((
                     By.XPATH, '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
                 ))
             )
 
-            # Limpiar campo
+            # Limpiar: Ctrl+A -> Delete es rapido
             input_field.send_keys(Keys.CONTROL + "a")
             input_field.send_keys(Keys.DELETE)
             
-            # Escribir término de búsqueda
-            input_field.send_keys(contact_input)
-            
-            # Esperar un poco más para permitir que WA filtre resultados de texto (grupos)
-            time.sleep(1.5) 
+            # Buscar
+            input_field.send_keys(phone_number)
+            # Pequeña espera computacional para que WA procese la búsqueda
+            # No podemos eliminarla del todo porque WA tarda en filtrar
+            time.sleep(0.8) 
             
             return True
         except Exception as e:
@@ -235,35 +239,37 @@ class WhatsAppService:
             return False
     
     def check_contact_exists(self) -> tuple:
-        """Verifica si el contacto o grupo existe tras la búsqueda."""
+        """Verifica si el contacto existe y tiene WhatsApp."""
         try:
-            # Esperar resultados
-            short_wait = WebDriverWait(self.driver, 5)
-
-            # 1. Verificar si hay mensaje de "No se encontraron resultados"	
+            # Esperar panel lateral o error
+            # Usamos wait con ANY condition si fuera posible, aqui secuencial optimizado
             try:
-                # Selectores comunes para "No resultados"
-                # x1c436fg suele ser el contenedor de "Sin chats, contactos o mensajes"
-                no_results = self.driver.find_elements(By.XPATH, "//div[contains(text(), 'No se encontraron') or contains(text(), 'No results')]")
-                if no_results:
-                     return True, False, "No encontrado en búsqueda"
-            except:
-                pass
+                # 1. Chequeo rápido de mensaje "Sin resultados" o similar
+                # Optimización: Reducir timeout si estamos seguros que la búsqueda ya se hizo
+                short_wait = WebDriverWait(self.driver, 5)
+                
+                # Verificar si hay error de conexión
+                try:
+                    short_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.x1c436fg')))
+                    return False, False, "Sin conexión a Internet"
+                except:
+                    pass
 
-            # 2. Verificar si hay resultados en la lista (celdas de chat)
-            try:
-                # Buscar elementos de fila (chats, contactos, mensajes)
-                # WA Web usa role='row' para elementos de lista
-                short_wait.until(EC.presence_of_element_located((
-                    By.CSS_SELECTOR, "div[role='row'], div._ak72"
-                )))
-                return True, True, "Encontrado"
-            except:
-                # Si no hay filas y no hay mensaje de "No resultados", es ambiguo.
-                # Pero si estamos buscando un grupo, debería aparecer.
-                # Damos un beneficio de duda si no hay error explícito.
-                return True, False, "No se detectaron resultados visuales"
-
+                # Verificar si el contacto tiene WhatsApp
+                # Esperamos que aparezca la lista de resultados o el mensaje de 'no encontrado'
+                # WA suele mostrar "Contactos en WhatsApp"
+                try:
+                    short_wait.until(
+                        EC.presence_of_element_located((
+                            By.XPATH, "//span[contains(text(), 'Contactos en WhatsApp') or contains(text(), 'Usuarios que no están en tus contactos')]"
+                        ))
+                    )
+                    return True, True, ""
+                except:
+                    # Si no aparece lo anterior, quizás es inválido
+                    return True, False, "Sin WhatsApp"
+            except Exception as e:
+                return True, False, "Timeout verificación"
         except Exception as e:
             print(f"Error al verificar contacto: {e}")
             return False, False, str(e)
