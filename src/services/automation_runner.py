@@ -7,6 +7,7 @@ import random
 import threading
 from datetime import datetime
 from .whatsapp_service import WhatsAppService
+from .whatsapp_monitor_service import WhatsAppMonitorService
 from .report_service import ReportService
 from ..utils.message_templates import generate_random_message, replace_variables
 from ..models.campaign import Campaign
@@ -28,6 +29,7 @@ class AutomationRunner:
         self.stop_event = threading.Event()
         self.whatsapp_service = WhatsAppService()
         self.report_service = ReportService()
+        self.monitor_service = None  # Se inicializará después de tener el driver
         
     def start(self):
         """Inicia la ejecución en un hilo."""
@@ -70,6 +72,18 @@ class AutomationRunner:
             if self.stop_event.is_set():
                 return
                 
+            # Inicializar el monitor de mensajes si está configurado
+            monitor_phone = self.config.get("monitor_phone", "")
+            if monitor_phone:
+                self.monitor_service = WhatsAppMonitorService(
+                    driver=self.whatsapp_service.driver,
+                    notification_contact=monitor_phone,
+                    profile_name=self.profile.name
+                )
+                print(f"📱 Monitor de mensajes activado - Notificaciones a: {monitor_phone}")
+            else:
+                print("📱 Monitor de mensajes desactivado")
+                
             # 3. Bucle de envío
             total = len(self.phone_numbers)
             pause_after = int(self.config.get("pause", 0))
@@ -78,6 +92,21 @@ class AutomationRunner:
             for index, phone in enumerate(self.phone_numbers):
                 if self.stop_event.is_set():
                     break
+                
+                # MONITOREAR MENSAJES NUEVOS ANTES DE CADA ENVÍO
+                monitor_time = 0
+                if self.monitor_service:
+                    try:
+                        # El tiempo del monitor se incluirá en el intervalo
+                        max_monitor_time = min(5, interval // 2)  # Máximo 5 seg o la mitad del intervalo
+                        monitor_time = self.monitor_service.monitorear_y_notificar(
+                            self.whatsapp_service, 
+                            max_time=max_monitor_time
+                        )
+                        if monitor_time > 0:
+                            print(f"⏱ Tiempo de monitoreo: {monitor_time:.1f}s")
+                    except Exception as e:
+                        print(f"Error en monitoreo: {e}")
                     
                 self.progress_callback(index, total, f"Enviando a {phone}...")
                 
@@ -220,7 +249,9 @@ class AutomationRunner:
                 
                 # Pausas
                 if index < total - 1:
-                    time.sleep(interval)
+                    # Restar el tiempo del monitoreo del intervalo
+                    adjusted_interval = max(1, interval - int(monitor_time))
+                    time.sleep(adjusted_interval)
                     if pause_after > 0 and (index + 1) % pause_after == 0:
                         self.progress_callback(index + 1, total, "Pausa programada...")
                         time.sleep(60) # Pausa fija de lote

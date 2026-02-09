@@ -150,6 +150,12 @@ class SendView(ttk.Frame):
         self.ent_pause.insert(0, "10") # Default actualizado
         self.ent_pause.grid(row=11, column=1, **grid_opts)
         
+        # 5. Monitor de Mensajes Nuevos
+        ttk.Label(config_frame, text="Monitor - Número Notif.:").grid(row=12, column=0, **grid_opts)
+        self.ent_monitor_phone = ttk.Entry(config_frame, width=20)
+        self.ent_monitor_phone.grid(row=12, column=1, **grid_opts)
+        ttk.Label(config_frame, text="(Ej: +573001234567, vacío=deshabilitado)", font=("Arial", 8)).grid(row=12, column=2, padx=2, sticky=tk.W)
+        
         # Frame para configuración de Rotación (inicialmente oculto)
         self.frame_rotation_config = ttk.Frame(config_frame)
         
@@ -206,7 +212,7 @@ class SendView(ttk.Frame):
             self.frame_dist_container.pack(fill=tk.BOTH, expand=True)
             self.btn_refresh.pack(side=tk.RIGHT, padx=2)
             self.lbl_profile.config(text="Perfiles:")
-            self.frame_rotation_config.grid(row=12, column=0, columnspan=3, pady=5, sticky=tk.W)
+            self.frame_rotation_config.grid(row=13, column=0, columnspan=3, pady=5, sticky=tk.W)
     
     def toggle_all_profiles(self):
         val = self.var_select_all.get()
@@ -350,7 +356,8 @@ class SendView(ttk.Frame):
             "interval": self.ent_interval.get(),
             "pause": self.ent_pause.get(),
             "message_type": self.combo_msg_type.get(),
-            "campaign_type": self.combo_camp_type.get()
+            "campaign_type": self.combo_camp_type.get(),
+            "monitor_phone": self.ent_monitor_phone.get().strip()  # Nuevo: número para notificaciones
         }
         
         if not config["message_type"]:
