@@ -1,8 +1,8 @@
 {
-    "version": "1.2.0",
-    "build": "20260208",
-    "release_date": "2026-02-08",
-    "release_notes": "- Monitor WhatsApp: Corrección de notificaciones y timing\n- Monitor WhatsApp: Auto-marcar como leído al detectar\n- Monitor WhatsApp: Incluir nombre de perfil en notificaciones",
+    "version": "1.2.1",
+    "build": "20260209",
+    "release_date": "2026-02-09",
+    "release_notes": "- Sincronización de repositorio y mejoras en servicios WhatsApp\n- Monitor WhatsApp: Estabilidad en detección de mensajes",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
