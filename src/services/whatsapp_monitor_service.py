@@ -20,106 +20,17 @@ class WhatsAppMonitorService:
         
         Args:
             driver: Instancia de Selenium WebDriver ya inicializada
-            notification_contact: Número de teléfono para enviar notificaciones (formato: +573001234567)
+            notification_contact: Número o nombre de contacto/grupo para enviar notificaciones
             profile_name: Nombre del perfil de navegador que se está usando
         """
         self.driver = driver
         self.notification_contact = notification_contact
         self.profile_name = profile_name
         self.wait = WebDriverWait(self.driver, 10)
-        self.last_chats = []  # Para detectar nuevos chats
+        # Cambio: Usar diccionario para guardar estados y detectar cambios 'reales'
+        self.chat_states = {}  # Format: {name: "preview|time|count"}
 
-    # ... (rest of the file until enviar_notificacion)
 
-    def enviar_notificacion(self, chat_info, whatsapp_service):
-        """
-        Envía una notificación al contacto predefinido usando whatsapp_service.
-        
-        Args:
-            chat_info: Diccionario con información del chat
-            whatsapp_service: Instancia de WhatsAppService para enviar el mensaje
-        """
-        if not self.notification_contact:
-            print("[Monitor] No hay número de notificación configurado")
-            return False
-        
-        try:
-            # Asegurar que el número tenga el formato correcto
-            numero_notif = self.notification_contact
-            if not numero_notif.startswith('+'):
-                numero_notif = '+' + numero_notif
-                print(f"[Monitor] Número ajustado a formato internacional: {numero_notif}")
-            
-            # Formatear el mensaje de notificación (formato exacto del monitor funcional)
-            mensaje = f"""Perfil: {self.profile_name}
-Nombre: {chat_info['nombre']}
-Hora: {chat_info['hora']}
-Preview: {chat_info['preview']}
-Detectado: {chat_info['timestamp']}"""
-
-            print(f"[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
-            print(f"[Monitor] Número destino: {numero_notif}")
-            
-            # PASO 1: Click en "Nuevo chat"
-            print("[Monitor] Paso 1/5: Abriendo 'Nuevo chat'...")
-            # La función click_new_chat no retorna valor (void), así que no verificamos resultado
-            whatsapp_service.click_new_chat()
-            print("[Monitor] ✓ 'Nuevo chat' abierto (asumiendo éxito)")
-            
-            # PASO 2: Buscar el contacto
-            print(f"[Monitor] Paso 2/5: Buscando contacto {numero_notif}...")
-            if not whatsapp_service.search_contact(numero_notif):
-                print("[Monitor] ✗ Error al buscar contacto")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Contacto buscado")
-            
-            # PASO 3: Verificar si tiene WhatsApp
-            print("[Monitor] Paso 3/5: Verificando WhatsApp...")
-            exists, has_wa, err = whatsapp_service.check_contact_exists()
-            if not exists or not has_wa:
-                print(f"[Monitor] ✗ Contacto no válido: {err}")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Contacto validado")
-                
-            # PASO 4: Abrir chat
-            print("[Monitor] Paso 4/5: Abriendo chat...")
-            if not whatsapp_service.open_chat():
-                print("[Monitor] ✗ Error al abrir chat")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Chat abierto")
-            
-            # PASO 5: Enviar mensaje
-            print("[Monitor] Paso 5/5: Enviando mensaje...")
-            
-            # Limpiar mensaje de caracteres problemáticos
-            mensaje_limpio = self.limpiar_mensaje(mensaje)
-            
-            if whatsapp_service.send_text_message(mensaje_limpio):
-                print("[Monitor] ✓ Notificación enviada correctamente")
-                
-                # Esperar confirmación de envío
-                time.sleep(2)
-                
-                # Cerrar el chat y volver a la lista
-                whatsapp_service.close_chat()
-                
-                # Pausa adicional para asegurar que WhatsApp esté listo
-                time.sleep(2)
-                
-                return True
-            else:
-                print("[Monitor] ✗ Error al enviar texto")
-                whatsapp_service.close_chat()
-                return False
-                
-        except Exception as e:
-            print(f"[Monitor] ❌ Error en proceso de notificación: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
         
     def obtener_chats_no_leidos(self):
         """Detecta y obtiene información de los chats con mensajes no leídos."""
@@ -218,36 +129,61 @@ Detectado: {chat_info['timestamp']}"""
     
     def detectar_nuevos_chats(self, chats_actuales):
         """
-        Detecta qué chats son nuevos comparando con la última revisión.
+        Detecta qué chats tienen mensajes nuevos comparando con el estado anterior.
+        Ahora compara contenido/hora, no solo nombres.
         
         Args:
-            chats_actuales: Lista de chats detectados actualmente
+            chats_actuales: Lista de chats detectados actualmente (no leídos)
             
         Returns:
-            Lista de chats nuevos
+            Lista de chats que requieren notificación
         """
-        print(f"[Monitor] Chats actuales: {[c['nombre'] for c in chats_actuales]}")
-        print(f"[Monitor] Chats anteriores: {self.last_chats}")
+        print(f"[Monitor] Analizando {len(chats_actuales)} chats activos...")
         
-        # Si es la primera vez, TODOS son nuevos y SÍ los notificamos
-        if not self.last_chats:
-            self.last_chats = [chat['nombre'] for chat in chats_actuales]
-            print(f"[Monitor] Primera revisión - Notificando todos los {len(chats_actuales)} chats no leídos encontrados")
-            return chats_actuales  # Devolver TODOS los chats para notificar
+        chats_para_notificar = []
+        nuevos_estados = {}
+
+        for chat in chats_actuales:
+            try:
+                nombre = chat['nombre']
+                # Crear firma única del estado actual
+                estado_actual = f"{chat['preview']}|{chat['hora']}|{chat['mensajes_no_leidos']}"
+                nuevos_estados[nombre] = estado_actual
+                
+                # Verificar si este chat ya fue visto y si ha cambiado
+                if nombre in self.chat_states:
+                    estado_anterior = self.chat_states[nombre]
+                    
+                    if estado_anterior != estado_actual:
+                        print(f"[Monitor] 🔔 Nuevo mensaje en '{nombre}':")
+                        print(f"   Anterior: {estado_anterior}")
+                        print(f"   Actual:   {estado_actual}")
+                        chats_para_notificar.append(chat)
+                    else:
+                        # El chat sigue ahí igual que antes (quizás falló al marcarse leído), 
+                        # no notificamos de nuevo para evitar spam masivo del mismo mensaje
+                        print(f"[Monitor] Chat '{nombre}' sin cambios desde última revisión")
+                else:
+                    # Chat no estaba en la memoria reciente (es nuevo o reapareció)
+                    print(f"[Monitor] 🆕 Chat entrante detectado: '{nombre}'")
+                    chats_para_notificar.append(chat)
+            
+            except Exception as e:
+                print(f"[Monitor] Error analizando chat: {e}")
+                # En caso de error, lo agregamos por si acaso
+                chats_para_notificar.append(chat)
         
-        # Detectar chats que no estaban en la lista anterior
-        nombres_anteriores = set(self.last_chats)
-        chats_nuevos = [chat for chat in chats_actuales if chat['nombre'] not in nombres_anteriores]
+        # Actualizar nuestra base de datos de estados
+        # Si un chat ya no está en 'chats_actuales' (porque fue leído), desaparecerá de aquí
+        # y si vuelve a aparecer luego, será tratado como nuevo. Correcto.
+        self.chat_states = nuevos_estados
         
-        if chats_nuevos:
-            print(f"[Monitor] ¡Chats nuevos detectados!: {[c['nombre'] for c in chats_nuevos]}")
+        if chats_para_notificar:
+            print(f"[Monitor] Total para notificar: {len(chats_para_notificar)}")
         else:
-            print(f"[Monitor] No hay chats nuevos")
+            print(f"[Monitor] No hay novedades para notificar")
         
-        # Actualizar la lista
-        self.last_chats = [chat['nombre'] for chat in chats_actuales]
-        
-        return chats_nuevos
+        return chats_para_notificar
     
     def marcar_chat_como_leido(self, chat_info):
         """
@@ -313,11 +249,8 @@ Detectado: {chat_info['timestamp']}"""
             return False
         
         try:
-            # Asegurar que el número tenga el formato correcto
-            numero_notif = self.notification_contact
-            if not numero_notif.startswith('+'):
-                numero_notif = '+' + numero_notif
-                print(f"[Monitor] Número ajustado a formato internacional: {numero_notif}")
+            # Usar el contacto tal como está (puede ser número o nombre de grupo)
+            contacto_notif = self.notification_contact
             
             # Formatear el mensaje de notificación (formato exacto del monitor funcional)
             mensaje = f"""Perfil: {self.profile_name}
@@ -330,7 +263,7 @@ Detectado: {chat_info['timestamp']}"""
             mensaje_limpio = self.limpiar_mensaje(mensaje)
             
             print(f"\n[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
-            print(f"[Monitor] Número destino: {numero_notif}")
+            print(f"[Monitor] Contacto destino: {contacto_notif}")
             
             # PASO 1: Click en "Nuevo chat"
             print("[Monitor] Paso 1/5: Abriendo 'Nuevo chat'...")
@@ -339,8 +272,8 @@ Detectado: {chat_info['timestamp']}"""
             print("[Monitor] ✓ 'Nuevo chat' abierto (asumiendo éxito)")
             
             # PASO 2: Buscar el contacto
-            print(f"[Monitor] Paso 2/5: Buscando contacto {numero_notif}...")
-            if not whatsapp_service.search_contact(numero_notif):
+            print(f"[Monitor] Paso 2/5: Buscando contacto {contacto_notif}...")
+            if not whatsapp_service.search_contact(contacto_notif):
                 print("[Monitor] ✗ Error al buscar contacto")
                 whatsapp_service.go_back()
                 return False
