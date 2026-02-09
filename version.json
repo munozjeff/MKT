@@ -1,8 +1,8 @@
 {
-    "version": "1.3.0",
-    "build": "20260209",
-    "release_date": "2026-02-09",
-    "release_notes": "- Monitor WhatsApp: Notificación de CADA mensaje nuevo\n- Monitor WhatsApp: Soportar búsqueda por nombre de grupo/contacto\n- Monitor WhatsApp: Eliminar prefijo forzado +57\n- Corrección lógica de detección de estados de chat",
+    "version": "1.2.0",
+    "build": "20260208",
+    "release_date": "2026-02-08",
+    "release_notes": "- Monitor WhatsApp: Corrección de notificaciones y timing\n- Monitor WhatsApp: Auto-marcar como leído al detectar\n- Monitor WhatsApp: Incluir nombre de perfil en notificaciones",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

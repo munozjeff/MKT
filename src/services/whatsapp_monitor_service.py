@@ -27,9 +27,7 @@ class WhatsAppMonitorService:
         self.notification_contact = notification_contact
         self.profile_name = profile_name
         self.wait = WebDriverWait(self.driver, 10)
-        self.wait = WebDriverWait(self.driver, 10)
-        # Cambio: Usar diccionario para guardar estados y detectar cambios 'reales'
-        self.chat_states = {}  # Format: {name: "preview|time|count"}
+        self.last_chats = []  # Para detectar nuevos chats
 
     # ... (rest of the file until enviar_notificacion)
 
@@ -220,62 +218,36 @@ Detectado: {chat_info['timestamp']}"""
     
     def detectar_nuevos_chats(self, chats_actuales):
         """
-        Detecta qué chats tienen mensajes nuevos comparando con el estado anterior.
-        Ahora compara contenido/hora, no solo nombres.
+        Detecta qué chats son nuevos comparando con la última revisión.
         
         Args:
-            chats_actuales: Lista de chats detectados actualmente (no leídos)
+            chats_actuales: Lista de chats detectados actualmente
             
         Returns:
-            Lista de chats que requieren notificación
+            Lista de chats nuevos
         """
-        print(f"[Monitor] Analizando {len(chats_actuales)} chats activos...")
+        print(f"[Monitor] Chats actuales: {[c['nombre'] for c in chats_actuales]}")
+        print(f"[Monitor] Chats anteriores: {self.last_chats}")
         
-        chats_para_notificar = []
-        nuevos_estados = {}
-
-        for chat in chats_actuales:
-            try:
-                nombre = chat['nombre']
-                # Crear firma única del estado actual
-                estado_actual = f"{chat['preview']}|{chat['hora']}|{chat['mensajes_no_leidos']}"
-                nuevos_estados[nombre] = estado_actual
-                
-                # Verificar si este chat ya fue visto y si ha cambiado
-                if nombre in self.chat_states:
-                    estado_anterior = self.chat_states[nombre]
-                    
-                    if estado_anterior != estado_actual:
-                        print(f"[Monitor] 🔔 Nuevo mensaje en '{nombre}':")
-                        print(f"   Anterior: {estado_anterior}")
-                        print(f"   Actual:   {estado_actual}")
-                        chats_para_notificar.append(chat)
-                    else:
-                        # El chat sigue ahí igual que antes (quizás falló al marcarse leído), 
-                        # no notificamos de nuevo para evitar spam masivo del mismo mensaje
-                        # A MENOS que el usuario quiera insistencia. Por ahora evitamos duplicados exactos.
-                        print(f"[Monitor] Chat '{nombre}' sin cambios desde última revisión")
-                else:
-                    # Chat no estaba en la memoria reciente (es nuevo o reapareció)
-                    print(f"[Monitor] 🆕 Chat entrante detectado: '{nombre}'")
-                    chats_para_notificar.append(chat)
-            
-            except Exception as e:
-                print(f"[Monitor] Error analizando chat: {e}")
-                # En caso de error, lo agregamos por si acaso
-                chats_para_notificar.append(chat)
+        # Si es la primera vez, TODOS son nuevos y SÍ los notificamos
+        if not self.last_chats:
+            self.last_chats = [chat['nombre'] for chat in chats_actuales]
+            print(f"[Monitor] Primera revisión - Notificando todos los {len(chats_actuales)} chats no leídos encontrados")
+            return chats_actuales  # Devolver TODOS los chats para notificar
         
-        # Actualizar nuestra base de datos de estados
-        # Si un chat ya no está en 'chats_actuales' (porque fue leído), desaparecerá de aquí
-        # y si vuelve a aparecer luego, será tratado como nuevo. Correcto.
-        self.chat_states = nuevos_estados
+        # Detectar chats que no estaban en la lista anterior
+        nombres_anteriores = set(self.last_chats)
+        chats_nuevos = [chat for chat in chats_actuales if chat['nombre'] not in nombres_anteriores]
         
-        if chats_para_notificar:
-            print(f"[Monitor] Total para notificar: {len(chats_para_notificar)}")
+        if chats_nuevos:
+            print(f"[Monitor] ¡Chats nuevos detectados!: {[c['nombre'] for c in chats_nuevos]}")
         else:
-            print(f"[Monitor] No hay novedades para notificar")
+            print(f"[Monitor] No hay chats nuevos")
         
-        return chats_para_notificar
+        # Actualizar la lista
+        self.last_chats = [chat['nombre'] for chat in chats_actuales]
+        
+        return chats_nuevos
     
     def marcar_chat_como_leido(self, chat_info):
         """
@@ -341,9 +313,11 @@ Detectado: {chat_info['timestamp']}"""
             return False
         
         try:
-            # Usar el número o nombre tal cual lo ingresó el usuario
+            # Asegurar que el número tenga el formato correcto
             numero_notif = self.notification_contact
-            print(f"[Monitor] Destino de notificación: {numero_notif}")
+            if not numero_notif.startswith('+'):
+                numero_notif = '+' + numero_notif
+                print(f"[Monitor] Número ajustado a formato internacional: {numero_notif}")
             
             # Formatear el mensaje de notificación (formato exacto del monitor funcional)
             mensaje = f"""Perfil: {self.profile_name}
