@@ -34,13 +34,15 @@ class BrowsersView(ttk.Frame):
         list_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PADDING_MEDIUM))
         
         # Tabla de perfiles
-        columns = ("Nombre", "Estado", "Ruta")
+        columns = ("Nombre", "Estado", "Etiquetas", "Ruta")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings")
         self.tree.heading("Nombre", text="Nombre del Perfil")
         self.tree.heading("Estado", text="Estado")
+        self.tree.heading("Etiquetas", text="Etiquetas")
         self.tree.heading("Ruta", text="Ruta de Datos")
         self.tree.column("Nombre", width=150)
-        self.tree.column("Estado", width=100)
+        self.tree.column("Estado", width=80)
+        self.tree.column("Etiquetas", width=150)
         self.tree.column("Ruta", width=250)
         
         # Scrollbar
@@ -49,6 +51,15 @@ class BrowsersView(ttk.Frame):
         
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Menú contextual
+        self.context_menu = tk.Menu(self.tree, tearoff=0)
+        self.context_menu.add_command(label="Editar Etiquetas", command=self.edit_tags)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Abrir Navegador", command=self.open_profile)
+        self.context_menu.add_command(label="Eliminar Perfil", command=self.delete_profile)
+        
+        self.tree.bind("<Button-3>", self.show_context_menu)
         
         # Frame de acciones (Derecha)
         action_frame = ttk.Frame(main_frame)
@@ -68,6 +79,9 @@ class BrowsersView(ttk.Frame):
         ttk.Separator(action_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
         # Acciones sobre perfil seleccionado
+        btn_tags = ttk.Button(action_frame, text="Editar Etiquetas", command=self.edit_tags)
+        btn_tags.pack(fill=tk.X, pady=5)
+        
         btn_open = ttk.Button(action_frame, text="Abrir Navegador", command=self.open_profile)
         btn_open.pack(fill=tk.X, pady=5)
         
@@ -89,11 +103,21 @@ class BrowsersView(ttk.Frame):
             is_active = self.browser_service.is_profile_active(profile.name)
             status = "Ocupado" if is_active else "Disponible"
             
+            # Formato de etiquetas
+            tags_str = ", ".join(profile.tags) if profile.tags else ""
+            
             # Solo mostrar parte final de la ruta para que no sea tan larga
             short_path = "..." + profile.path[-30:] if len(profile.path) > 30 else profile.path
             
-            self.tree.insert("", "end", values=(profile.name, status, short_path))
+            self.tree.insert("", "end", values=(profile.name, status, tags_str, short_path))
             
+    def show_context_menu(self, event):
+        """Muestra el menú contextual."""
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            self.context_menu.post(event.x_root, event.y_root)
+
     def create_profile(self):
         """Crea un nuevo perfil."""
         name = self.entry_name.get().strip()
@@ -109,38 +133,131 @@ class BrowsersView(ttk.Frame):
             messagebox.showerror(MSG_ERROR, "No se pudo crear el perfil (¿ya existe?)")
             
     def delete_profile(self):
-        """Elimina el perfil seleccionado."""
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning(MSG_WARNING, "Seleccione un perfil para eliminar")
+        """Elimina el/los perfil(es) seleccionado(s)."""
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showwarning(MSG_WARNING, "Seleccione al menos un perfil para eliminar")
             return
             
-        item = self.tree.item(selected[0])
-        name = item["values"][0]
-        
-        if messagebox.askyesno("Confirmar", f"¿Eliminar perfil '{name}'?\nSe perderán todos los datos de sesión."):
-            if self.browser_service.delete_profile(name):
-                messagebox.showinfo(MSG_SUCCESS, "Perfil eliminado")
+        profiles_to_delete = []
+        for item_id in selected_items:
+            item = self.tree.item(item_id)
+            profiles_to_delete.append(item["values"][0])
+            
+        count = len(profiles_to_delete)
+        msg = f"¿Eliminar {count} perfil(es)?\nSe perderán todos los datos de sesión de:\n"
+        # Mostrar los primeros 5 nombres
+        msg += "\n".join(profiles_to_delete[:5])
+        if count > 5:
+            msg += f"\n... y {count - 5} más."
+            
+        if messagebox.askyesno("Confirmar Eliminación", msg):
+            success_count = 0
+            for name in profiles_to_delete:
+                if self.browser_service.delete_profile(name):
+                    success_count += 1
+                else:
+                    print(f"No se pudo eliminar {name} (posiblemente en uso)")
+            
+            if success_count > 0:
+                messagebox.showinfo(MSG_SUCCESS, f"Se eliminaron {success_count} perfiles.")
                 self.load_profiles()
             else:
-                messagebox.showerror(MSG_ERROR, "No se pudo eliminar el perfil (puede estar en uso)")
+                messagebox.showerror(MSG_ERROR, "No se pudo eliminar ningún perfil (verifique si están en uso).")
 
     def open_profile(self):
         """Abre el navegador con el perfil seleccionado para configuración manual."""
-        selected = self.tree.selection()
-        if not selected:
+        selected_items = self.tree.selection()
+        if not selected_items:
             messagebox.showwarning(MSG_WARNING, "Seleccione un perfil para abrir")
             return
             
-        item = self.tree.item(selected[0])
-        name = item["values"][0]
-        
-        if self.browser_service.is_profile_active(name):
-            messagebox.showwarning(MSG_WARNING, "Este perfil ya está en uso")
+        for item_id in selected_items:
+            item = self.tree.item(item_id)
+            name = item["values"][0]
+            
+            if self.browser_service.is_profile_active(name):
+                print(f"Perfil {name} ya está en uso, omitiendo.")
+                continue
+                
+            # Abrir en hilo separado
+            threading.Thread(target=self._run_browser_manual, args=(name,)).start()
+            # Pequeño delay para no saturar si son muchos
+            time.sleep(1)
+
+    def edit_tags(self):
+        """Abre diálogo para editar etiquetas (soporta selección múltiple)."""
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showwarning(MSG_WARNING, "Seleccione al menos un perfil para editar etiquetas")
             return
             
-        # Abrir en hilo separado
-        threading.Thread(target=self._run_browser_manual, args=(name,)).start()
+        profile_names = []
+        for item_id in selected_items:
+            item = self.tree.item(item_id)
+            profile_names.append(item["values"][0])
+            
+        # Dialogo
+        dialog = tk.Toplevel(self)
+        title_text = f"Etiquetas: {profile_names[0]}" if len(profile_names) == 1 else f"Etiquetas ({len(profile_names)} perfiles)"
+        dialog.title(title_text)
+        dialog.geometry("450x250")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # Info
+        ttk.Label(dialog, text="Etiquetas (separadas por coma):").pack(pady=(10, 5))
+        
+        # Entrada
+        entry = ttk.Entry(dialog, width=50)
+        entry.pack(pady=5, padx=20)
+        
+        # Si es solo uno, pre-cargar sus etiquetas
+        single_profile = None
+        if len(profile_names) == 1:
+            all_profiles = self.browser_service.get_all_profiles()
+            single_profile = next((p for p in all_profiles if p.name == profile_names[0]), None)
+            if single_profile and single_profile.tags:
+                entry.insert(0, ", ".join(single_profile.tags))
+        
+        entry.focus()
+        
+        # Opciones para múltiple selección
+        action_var = tk.StringVar(value="overwrite")
+        
+        if len(profile_names) > 1:
+            frame_opts = ttk.LabelFrame(dialog, text="Acción")
+            frame_opts.pack(fill=tk.X, padx=20, pady=10)
+            
+            ttk.Radiobutton(frame_opts, text="Sobrescribir (reemplazar existentes)", variable=action_var, value="overwrite").pack(anchor="w", padx=5, pady=2)
+            ttk.Radiobutton(frame_opts, text="Añadir (mantener existentes)", variable=action_var, value="add").pack(anchor="w", padx=5, pady=2)
+        
+        def save():
+            new_tags_str = entry.get()
+            new_tags = [t.strip() for t in new_tags_str.split(',') if t.strip()]
+            action = action_var.get()
+            
+            all_profiles = self.browser_service.get_all_profiles()
+            # Filiprar solo los seleccionados
+            target_profiles = [p for p in all_profiles if p.name in profile_names]
+            
+            for profile in target_profiles:
+                if len(profile_names) == 1 or action == "overwrite":
+                    profile.tags = new_tags
+                elif action == "add":
+                    # Añadir sin duplicar
+                    current_set = set(profile.tags)
+                    for t in new_tags:
+                        current_set.add(t)
+                    profile.tags = sorted(list(current_set))
+                    
+                profile.save_metadata()
+                
+            self.load_profiles()
+            dialog.destroy()
+            messagebox.showinfo(MSG_SUCCESS, "Etiquetas actualizadas")
+            
+        ttk.Button(dialog, text="Guardar", command=save).pack(pady=20)
         
     def _run_browser_manual(self, profile_name):
         """Ejecuta el navegador manualmente y maneja el bloqueo."""

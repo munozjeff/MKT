@@ -223,6 +223,13 @@ class SendView(ttk.Frame):
         profiles = self.browser_service.get_available_profiles()
         values = [p.name for p in profiles]
         
+        # Obtener todas las etiquetas únicas
+        all_tags = set()
+        for p in profiles:
+            for tag in p.tags:
+                all_tags.add(tag)
+        sorted_tags = sorted(list(all_tags))
+        
         # Actualizar Combo (Individual)
         self.combo_profiles['values'] = values
         self.combo_profiles.set('') # Limpiar selección por defecto
@@ -234,11 +241,59 @@ class SendView(ttk.Frame):
         self.profile_vars.clear()
         self.var_select_all.set(False)
         
+        # Limpiar selector de etiquetas anterior si existe
+        if hasattr(self, 'frame_tag_filter'):
+            self.frame_tag_filter.destroy()
+            
+        # Crear selector de etiquetas en el header
+        self.frame_tag_filter = ttk.Frame(self.frame_dist_header)
+        self.frame_tag_filter.pack(side=tk.RIGHT, padx=5)
+        
+        ttk.Label(self.frame_tag_filter, text="Etiqueta:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.combo_tags = ttk.Combobox(self.frame_tag_filter, values=["(Todas)"] + sorted_tags, state="readonly", width=10, font=("Arial", 8))
+        self.combo_tags.pack(side=tk.LEFT, padx=2)
+        self.combo_tags.set("(Todas)")
+        self.combo_tags.bind("<<ComboboxSelected>>", lambda e: self.select_by_tag(profiles))
+        
         for p_name in values:
             var = tk.BooleanVar(value=False)
             self.profile_vars[p_name] = var
-            chk = ttk.Checkbutton(self.inner_frame_profiles, text=p_name, variable=var)
+            
+            # Formato nombre con etiquetas
+            p_obj = next((p for p in profiles if p.name == p_name), None)
+            display_text = p_name
+            if p_obj and p_obj.tags:
+                display_text += f" [{', '.join(p_obj.tags)}]"
+                
+            chk = ttk.Checkbutton(self.inner_frame_profiles, text=display_text, variable=var)
             chk.pack(anchor="w", padx=5)
+
+    def select_by_tag(self, profiles):
+        """Marca los perfiles que coincidan con la etiqueta seleccionada."""
+        tag = self.combo_tags.get()
+        
+        # Si selecciona (Todas), no hacemos nada especial (o podríamos deseleccionar todo? Mejor no tocar para no borrar manual)
+        if tag == "(Todas)":
+            return
+            
+        # Marcar los coincidentes
+        count = 0
+        for p in profiles:
+            if tag in p.tags:
+                if p.name in self.profile_vars:
+                    self.profile_vars[p.name].set(True)
+                    count += 1
+            else:
+                # Opcional: Desmarcar los que no coinciden? 
+                # El usuario pidió "seleccionar todos los de un grupo", no necesariamente deseleccionar el resto.
+                # Pero para "filtrar" suele esperarse que solo queden esos.
+                # Vamos a desmarcar los que no tengan el tag para que sea una selección limpia del grupo.
+                if p.name in self.profile_vars:
+                    self.profile_vars[p.name].set(False)
+        
+        # Feedback visual si no hay coincidencias (raro si viene del combo)
+        if count == 0:
+            pass
             
     def load_excel_file(self):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])

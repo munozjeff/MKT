@@ -57,24 +57,13 @@ class WhatsAppService:
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
                 
-                # Inicializar driver con reintento y desbloqueo
+                # Inicializar driver SIN INTENOS DE DESBLOQUEO NI RECUPERACIÓN
                 try:
                     self.driver = webdriver.Chrome(service=self.service, options=options)
                 except Exception as e:
                     print(f"Error al iniciar driver: {e}")
-                    if "SessionNotCreatedException" in str(e) or "Chrome instance exited" in str(e):
-                        print("Detectado bloqueo de perfil. Intentando desbloquear...")
-                        if profile_path and self._unlock_profile(profile_path):
-                            print("Perfil desbloqueado. Reintentando inicio...")
-                            try:
-                                self.driver = webdriver.Chrome(service=self.service, options=options)
-                            except Exception as e2:
-                                print(f"Fallo reintento tras desbloqueo: {e2}")
-                                return False
-                        else:
-                            return False
-                    else:
-                        return False
+                    # Ya no intentamos desbloquear, fallamos directamente
+                    return False
                 
                 # 4. Solución CDP: Ocultar propiedad navigator.webdriver
                 try:
@@ -177,6 +166,47 @@ class WhatsAppService:
                 ))
                 return True
         except:
+            return False
+
+    def is_session_active(self) -> bool:
+        """
+        Verifica si la sesión está activa buscando indicadores de desconexión (QR, textos de login).
+        Retorna True si la sesión parece activa, False si se detecta cierre de sesión.
+        """
+        try:
+            # 1. Busqueda de canvas QR (Selector mejorado)
+            # El usuario indicó: <canvas ... aria-label="Scan this QR code...">
+            # Buscamos por tag canvas Y por el aria-label parcial
+            qr_canvas = self.driver.find_elements(By.CSS_SELECTOR, "canvas[aria-label*='Scan']")
+            if qr_canvas:
+                print("Detectado código QR (Canvas). Sesión Cerrada.")
+                return False
+                
+            # 2. Busqueda por Texto de Login (Español/Inglés)
+            # "Pasos para iniciar sesión" / "Vincular con el número de teléfono"
+            # Usamos XPATH para buscar texto visible
+            login_texts = [
+                "//div[contains(text(), 'Pasos para iniciar sesión')]",
+                "//div[contains(text(), 'Vincular con el número de teléfono')]",
+                "//div[contains(text(), 'Use WhatsApp on your computer')]",
+                "//div[contains(text(), 'To use WhatsApp on your computer')]"
+            ]
+            
+            for xpath in login_texts:
+                if self.driver.find_elements(By.XPATH, xpath):
+                    print(f"Detectado texto de login ({xpath}). Sesión Cerrada.")
+                    return False
+            
+            # 3. Verificar si estamos en la landing page por estructura
+            landing_wrapper = self.driver.find_elements(By.CLASS_NAME, "landing-wrapper")
+            if landing_wrapper:
+                print("Detectado wrapper de landing page. Sesión Cerrada.")
+                return False
+
+            return True
+        except Exception as e:
+            # Si hay error al buscar (ej. navegador cerrado o desconectado), asumimos inactivo
+            print(f"Error verificando estado de sesión: {e}")
             return False
     
     

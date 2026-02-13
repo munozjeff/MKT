@@ -49,7 +49,16 @@ class AutomationRunner:
                 self.progress_callback(0, len(self.phone_numbers), "Iniciando navegador...")
                 
             if not self.whatsapp_service.initialize_driver(self.profile.path):
-                raise Exception("No se pudo iniciar el navegador")
+                # Si falla el inicio (ej. lockfile), marcar como BLOQUEADO para que rotación lo salte
+                print(f"Fallo crítico al iniciar driver para {self.profile.name}. Marcando como BLOQUEADO.")
+                try:
+                    if "BLOQUEADO" not in self.profile.tags:
+                        self.profile.tags.append("BLOQUEADO")
+                        self.profile.save_metadata()
+                except Exception as e:
+                    print(f"Error guardando etiqueta BLOQUEADO por fallo inicio: {e}")
+                
+                raise Exception("Fallo inicio navegador (Perfil BLOQUEADO)")
             
             # 2. Esperar login
             if self.progress_callback:
@@ -138,6 +147,23 @@ class AutomationRunner:
                             # Lógica anti spam (intervalos aleatorios)
                             interval = random.randint(30, max(31, int(self.config.get("interval", 60))))
                             
+                        # --- Verificación de Sesión (QR Code) ---
+                        if not self.whatsapp_service.is_session_active():
+                            self.progress_callback(index, total, "Sesión cerrada detectada. Marcando perfil como BLOQUEADO y cerrando...")
+                            print(f"Sesión cerrada en perfil {self.profile.name}. Marcando como BLOQUEADO.")
+                            
+                            # 1. Agregar etiqueta BLOQUEADO
+                            try:
+                                if "BLOQUEADO" not in self.profile.tags:
+                                    self.profile.tags.append("BLOQUEADO")
+                                    self.profile.save_metadata()
+                                    print(f"Perfil {self.profile.name} etiquetado como BLOQUEADO.")
+                            except Exception as e:
+                                print(f"Error guardando etiqueta BLOQUEADO: {e}")
+                                
+                            # 2. Abortar ejecución para cerrar y rotar
+                            raise Exception("Sesión cerrada (Perfil BLOQUEADO)")
+                                
                         # Obtener texto
                         if self.config.get("campaign_type") == "Default":
                             message_text = generate_random_message()
@@ -169,9 +195,13 @@ class AutomationRunner:
                             # Mensaje puede ser fijo o de campaña
                         
                         # --- Envío ---
+                        # --- Envío ---
                         self.whatsapp_service.click_new_chat()
                         
                         if not self.whatsapp_service.search_contact(str(target_phone)):
+                            # CHECK REACTIVO: Si falla la búsqueda, verificar sesión
+                            self._check_session_lockout(index, total)
+                            
                             # Si no es el último intento, continuar con el siguiente
                             if attempt_index < len(phone_list) - 1:
                                 self.progress_callback(index, total, f"{phone}: Intento {attempt_index+1} fallido, probando contacto alternativo...")
@@ -183,6 +213,9 @@ class AutomationRunner:
                             
                         exists, has_wa, err = self.whatsapp_service.check_contact_exists()
                         if not has_wa:
+                            # CHECK REACTIVO: Verificar sesión también aquí
+                            self._check_session_lockout(index, total)
+                            
                             self.whatsapp_service.go_back() # Importante volver
                             # Si no es el último intento, continuar con el siguiente
                             if attempt_index < len(phone_list) - 1:
@@ -237,6 +270,10 @@ class AutomationRunner:
                         
                     except Exception as e:
                         print(f"Error procesando {target_phone} (intento {attempt_index+1}): {e}")
+                        
+                        # CHECK REACTIVO: Ante cualquier excepción, verificar sesión
+                        self._check_session_lockout(index, total)
+                        
                         # Si no es el último intento, continuar con el siguiente
                         if attempt_index < len(phone_list) - 1:
                             continue
@@ -244,7 +281,10 @@ class AutomationRunner:
                             # Era el último intento, reportar error
                             self.report_service.add_entry(phone, f"Error: {str(e)}")
                         # Intentar recuperar estado
-                        self.whatsapp_service.driver.refresh()
+                        try:
+                            self.whatsapp_service.driver.refresh()
+                        except:
+                            pass
                         time.sleep(5)
                 
                 # Pausas
@@ -257,6 +297,7 @@ class AutomationRunner:
                         time.sleep(60) # Pausa fija de lote
             
         except Exception as e:
+            # Si la excepción viene de _check_session_lockout, ya trae el mensaje correcto
             print(f"Error fatal en Runner: {e}")
             if self.progress_callback:
                 self.progress_callback(0, 0, f"Error: {e}")
@@ -267,3 +308,30 @@ class AutomationRunner:
             
             if self.completion_callback:
                 self.completion_callback(report_path)
+
+    def _check_session_lockout(self, index, total):
+        """
+        Verifica si la sesión se cerró y ejecuta bloqueo si es necesario.
+        Lanza excepción para detener el runner.
+        """
+        try:
+            if not self.whatsapp_service.is_session_active():
+                self.progress_callback(index, total, "Fallo detectado por cierre de sesión. Marcando BLOQUEADO...")
+                print(f"Sesión cerrada detectada tras fallo en perfil {self.profile.name}.")
+                
+                # 1. Agregar etiqueta BLOQUEADO
+                try:
+                    if "BLOQUEADO" not in self.profile.tags:
+                        self.profile.tags.append("BLOQUEADO")
+                        self.profile.save_metadata()
+                except Exception as e:
+                    print(f"Error guardando etiqueta BLOQUEADO: {e}")
+                    
+                # 2. Abortar ejecución
+                raise Exception("Sesión cerrada (Perfil BLOQUEADO)")
+        except Exception as e:
+            # Si es la excepción que acabamos de lanzar, re-lanzarla
+            if "BLOQUEADO" in str(e):
+                raise e
+            # Si falla la verificación (ej. driver muerto), también asumimos problema grave
+            print(f"Error verificando lockout: {e}")

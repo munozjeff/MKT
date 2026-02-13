@@ -280,14 +280,23 @@ Detectado: {chat_info['timestamp']}"""
             print("[Monitor] ✓ Contacto buscado")
             
             # PASO 3: Verificar que el contacto existe
-            print("[Monitor] Paso 3/5: Verificando existencia del contacto...")
-            found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
+            # Si tiene letras, asumimos que es un GRUPO o contacto guardado -> saltar validación estricta
+            import re
+            is_group_or_name = bool(re.search('[a-zA-Z]', contacto_notif))
             
-            if not found or not has_whatsapp:
-                print(f"[Monitor] ✗ El contacto no fue encontrado o no tiene WhatsApp: {error_msg}")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Contacto verificado")
+            if is_group_or_name:
+                print(f"[Monitor] Detectado nombre/grupo '{contacto_notif}', saltando validación numérica...")
+                # Pequeña espera para que aparezca en la lista
+                time.sleep(1)
+            else:
+                print("[Monitor] Paso 3/5: Verificando existencia del contacto (número)...")
+                found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
+                
+                if not found or not has_whatsapp:
+                    print(f"[Monitor] ✗ El contacto no fue encontrado o no tiene WhatsApp: {error_msg}")
+                    whatsapp_service.go_back()
+                    return False
+                print("[Monitor] ✓ Contacto verificado")
             
             # PASO 4: Abrir el chat
             print("[Monitor] Paso 4/5: Abriendo chat...")

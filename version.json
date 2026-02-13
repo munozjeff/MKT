@@ -1,8 +1,8 @@
 {
-    "version": "1.2.1",
-    "build": "20260209",
-    "release_date": "2026-02-09",
-    "release_notes": "- Sincronización de repositorio y mejoras en servicios WhatsApp\n- Monitor WhatsApp: Estabilidad en detección de mensajes",
+    "version": "1.2.2",
+    "build": "20260210",
+    "release_date": "2026-02-10",
+    "release_notes": "- Mejora en detección de sesión cerrada (QR/Login) proactiva y reactiva\n- Bloqueo automático de perfiles al cerrar sesión o fallar inicio\n- Soporte para envío a grupos (ignorando validación de número)\n- Edición y eliminación masiva de perfiles",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
