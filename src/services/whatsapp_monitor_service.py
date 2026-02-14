@@ -29,16 +29,19 @@ class WhatsAppMonitorService:
         self.wait = WebDriverWait(self.driver, 10)
         # Cambio: Usar diccionario para guardar estados y detectar cambios 'reales'
         self.chat_states = {}  # Format: {name: "preview|time|count"}
+        # Nuevo: Set para rastrear a quiénes ya se les envió auto-respuesta en esta sesión
+        self.replied_chats = set()
 
 
         
     def obtener_chats_no_leidos(self):
         """Detecta y obtiene información de los chats con mensajes no leídos."""
         try:
-            # Esperar a que cargue la lista de chats (timing igual al monitor funcional)
+            # Esperar a que cargue la lista de chats
             time.sleep(2)
             
             # Buscar todos los chats con badge de mensajes no leídos
+            # Usamos el selector específico que sabemos que funciona para español
             chats_no_leidos = self.driver.find_elements(
                 By.CSS_SELECTOR,
                 'div[role="row"]'
@@ -51,6 +54,7 @@ class WhatsAppMonitorService:
             for idx, chat in enumerate(chats_no_leidos):
                 try:
                     # Buscar el badge de mensajes no leídos dentro del chat
+                    # Selector: span con aria-label que contiene "mensaje" y "no leído"
                     badge = chat.find_element(
                         By.CSS_SELECTOR,
                         'span[aria-label*="mensaje"][aria-label*="no leído"]'
@@ -69,35 +73,20 @@ class WhatsAppMonitorService:
                             # Número de mensajes no leídos
                             num_mensajes = badge.get_attribute('aria-label')
                             
-                            # Vista previa del último mensaje
-                            try:
-                                preview_elem = chat.find_element(
-                                    By.CSS_SELECTOR,
-                                    'span.x78zum5.x1cy8zhl[title]'
-                                )
-                                preview = preview_elem.get_attribute('title')
-                                
-                                if not preview:
-                                    preview = preview_elem.text
-                            except:
-                                try:
-                                    preview_elem = chat.find_element(
-                                        By.CSS_SELECTOR,
-                                        'span.x1iyjqo2.x6ikm8r.x10wlt62.x1n2onr6[dir="ltr"]'
-                                    )
-                                    preview = preview_elem.text
-                                except:
-                                    preview = "No disponible"
+                            # Vista previa y hora
+                            preview = "No disponible"
+                            hora = "No disponible"
                             
-                            # Hora del último mensaje
                             try:
-                                hora_elem = chat.find_element(
-                                    By.CSS_SELECTOR,
-                                    'span.x140p0ai.x1gufx9m.x1s928wv'
-                                )
-                                hora = hora_elem.text
-                            except:
-                                hora = "No disponible"
+                                # Intentar extraer preview del texto visible
+                                lines = chat.text.split('\n')
+                                if len(lines) >= 2:
+                                    # Normalmente: [0] Hora, [1] Nombre, [2] Mensaje... varia según layout
+                                    # Estrategia segura: última línea suele ser el mensaje, segunda línea suele ser hora
+                                    preview = lines[-1]
+                                    if len(lines) > 1:
+                                        hora = lines[1]
+                            except: pass
                             
                             chat_info = {
                                 'nombre': nombre,
@@ -105,19 +94,20 @@ class WhatsAppMonitorService:
                                 'preview': preview[:50] + '...' if len(preview) > 50 else preview,
                                 'hora': hora,
                                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                'elemento': chat  # Guardar referencia al elemento del chat
+                                'elemento': chat
                             }
                             
                             chats_detectados.append(chat_info)
-                            print(f"[Monitor] Chat no leído detectado: {nombre} - {num_mensajes}")
+                            print(f"[Monitor] 📥 Chat no leído detectado: {nombre} ({num_mensajes})")
                             
                         except Exception as e:
-                            # Si no se puede extraer toda la info, continuar
                             print(f"[Monitor] Error al extraer info del chat {idx}: {e}")
                             continue
                             
                 except NoSuchElementException:
-                    # Este chat no tiene mensajes no leídos, continuar
+                    # No tiene badge de no leído
+                    continue
+                except Exception as e:
                     continue
             
             print(f"[Monitor] Total de chats no leídos detectados: {len(chats_detectados)}")
@@ -185,12 +175,13 @@ class WhatsAppMonitorService:
         
         return chats_para_notificar
     
-    def marcar_chat_como_leido(self, chat_info):
+    def marcar_chat_como_leido(self, chat_info, close_after=True):
         """
         Hace clic sobre el chat para abrirlo y marcarlo como leído.
         
         Args:
             chat_info: Diccionario con información del chat (incluye 'elemento')
+            close_after: Si es True, cierra el chat después de abrirlo
         
         Returns:
             True si se pudo abrir el chat, False en caso contrario
@@ -203,15 +194,36 @@ class WhatsAppMonitorService:
             
             print(f"[Monitor] Haciendo clic en chat '{chat_info['nombre']}' para marcarlo como leído...")
             
+            print(f"[Monitor] Haciendo clic en chat '{chat_info['nombre']}' para marcarlo como leído...")
+            
             # Hacer clic en el elemento del chat
-            elemento_chat.click()
+            try:
+                chat_info['elemento'].click()
+            except Exception as e:
+                print(f"[Monitor] ⚠ Click original falló ({type(e).__name__}), intentando re-buscar chat por nombre...")
+                try:
+                    # Intento de recuperación: buscar por el título exacto
+                    # Usamos XPATH para ir del titulo al row
+                    nombre = chat_info['nombre']
+                    # Escape simple de comillas si fuera necesario (aunque nombres de WA suelen ser safe)
+                    xpath = f"//span[@title='{nombre}']/ancestor::div[@role='row']"
+                    nuevo_elemento = self.driver.find_element(By.XPATH, xpath)
+                    nuevo_elemento.click()
+                    print(f"[Monitor] ✓ Elemento re-encontrado y clickeado")
+                except Exception as e2:
+                    print(f"[Monitor] ❌ Error fatal al intentar re-clickear chat: {e2}")
+                    return False
+
             time.sleep(1)  # Esperar que se abra el chat
             
             print(f"[Monitor] ✓ Chat '{chat_info['nombre']}' abierto y marcado como leído")
             
-            # Cerrar el chat (presionar ESC)
-            self.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
-            time.sleep(0.5)
+            if close_after:
+                # Cerrar el chat (presionar ESC)
+                try:
+                    self.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+                except: pass
+                time.sleep(0.5)
             
             return True
             
@@ -236,13 +248,14 @@ class WhatsAppMonitorService:
         
         return mensaje_limpio.strip()
     
-    def enviar_notificacion(self, chat_info, whatsapp_service):
+    def enviar_notificacion(self, chat_info, whatsapp_service, mensajes_completos=None):
         """
         Envía una notificación al contacto predefinido usando whatsapp_service.
         
         Args:
             chat_info: Diccionario con información del chat
             whatsapp_service: Instancia de WhatsAppService para enviar el mensaje
+            mensajes_completos: Lista de mensajes leídos (opcional)
         """
         if not self.notification_contact:
             print("[Monitor] No hay número de notificación configurado")
@@ -252,17 +265,25 @@ class WhatsAppMonitorService:
             # Usar el contacto tal como está (puede ser número o nombre de grupo)
             contacto_notif = self.notification_contact
             
-            # Formatear el mensaje de notificación (formato exacto del monitor funcional)
+            # Formatear el mensaje de notificación
+            contenido_mensajes = ""
+            if mensajes_completos:
+                contenido_mensajes = "\n".join(mensajes_completos)
+            else:
+                contenido_mensajes = f"Preview: {chat_info['preview']}"
+            
             mensaje = f"""Perfil: {self.profile_name}
 Nombre: {chat_info['nombre']}
 Hora: {chat_info['hora']}
-Preview: {chat_info['preview']}
-Detectado: {chat_info['timestamp']}"""
+Detectado: {chat_info['timestamp']}
+
+--- MENSAJES ---
+{contenido_mensajes}"""
             
             # Limpiar caracteres especiales del mensaje
             mensaje_limpio = self.limpiar_mensaje(mensaje)
             
-            print(f"\n[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
+            print(f"\\n[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
             print(f"[Monitor] Contacto destino: {contacto_notif}")
             
             # PASO 1: Click en "Nuevo chat"
@@ -341,7 +362,7 @@ Detectado: {chat_info['timestamp']}"""
                 pass
             return False
     
-    def monitorear_y_notificar(self, whatsapp_service, max_time=5):
+    def monitorear_y_notificar(self, whatsapp_service, max_time=5, auto_reply_text=None):
         """
         Monitorea mensajes nuevos y envía notificaciones si los hay.
         Esta función está diseñada para ser llamada antes de cada envío.
@@ -349,6 +370,7 @@ Detectado: {chat_info['timestamp']}"""
         Args:
             whatsapp_service: Instancia de WhatsAppService
             max_time: Tiempo máximo en segundos para el monitoreo (default: 5)
+            auto_reply_text: Texto para respuesta automática (opcional). Si se define, se envía al chat.
             
         Returns:
             Tiempo usado en el monitoreo (en segundos)
@@ -360,6 +382,9 @@ Detectado: {chat_info['timestamp']}"""
         print(f"\n[Monitor] ═══════════════════════════════════════")
         print(f"[Monitor] Iniciando monitoreo de mensajes nuevos")
         print(f"[Monitor] Número de notificaciones: {self.notification_contact}")
+        if auto_reply_text:
+            print(f"[Monitor] 🤖 MODO AUTO-RESPUESTA ACTIVO")
+            print(f"[Monitor] Mensaje: '{auto_reply_text}'")
         print(f"[Monitor] Tiempo máximo: {max_time}s")
         print(f"[Monitor] ═══════════════════════════════════════")
         
@@ -386,16 +411,73 @@ Detectado: {chat_info['timestamp']}"""
                     
                     print(f"\n[Monitor] Procesando notificación {idx}/{len(chats_nuevos)}...")
                     
-                    # PASO 1: Marcar el chat como leído haciendo clic sobre él
-                    if not self.marcar_chat_como_leido(chat):
-                        print(f"[Monitor] ⚠ No se pudo marcar como leído, continuando con notificación...")
+                    # PASO 1: Marcar el chat como leído PERO NO CERRARLO AÚN
+                    if not self.marcar_chat_como_leido(chat, close_after=False):
+                        print(f"[Monitor] ⚠ No se pudo marcar como leído, continuando...")
+                        continue
                     
-                    # PASO 2: Enviar notificación
-                    resultado = self.enviar_notificacion(chat, whatsapp_service)
-                    if resultado:
-                        print(f"[Monitor] ✅ Notificación {idx} enviada exitosamente")
+                    # PASO 1.5: Leer los mensajes completos
+                    mensajes = self.leer_mensajes_chat_abierto()
+                    
+                    # LÓGICA DE AUTO-RESPUESTA Y NOTIFICACIÓN
+                    # Si auto_reply_text está activo:
+                    #   - Primera vez (nuevo chat) → enviar auto-respuesta, NO notificar
+                    #   - Segunda vez (ya respondido) → NO auto-respuesta, SÍ notificar
+                    # Si auto_reply_text NO está activo → siempre notificar
+                    
+                    debe_notificar = True  # Por defecto, notificar
+                    
+                    if auto_reply_text:
+                        chat_id = chat['nombre']
+                        
+                        if chat_id in self.replied_chats:
+                            # Ya enviamos auto-respuesta antes
+                            # AHORA SÍ notificamos (es una respuesta del cliente después de nuestra auto-respuesta)
+                            print(f"[Monitor] ✅ Chat '{chat_id}' ya tiene auto-respuesta enviada")
+                            print(f"[Monitor] 📤 Enviando notificación de respuesta del cliente...")
+                            debe_notificar = True
+                        else:
+                            # Primera vez que detectamos este chat
+                            # Enviar auto-respuesta pero NO notificar aún
+                            print(f"[Monitor] 🤖 Primer mensaje de '{chat_id}', enviando auto-respuesta...")
+                            debe_notificar = False  # NO notificar en esta primera detección
+                            
+                            try:
+                                # Asegurar foco antes de escribir
+                                try:
+                                    input_box = self.driver.switch_to.active_element
+                                    input_box.click()
+                                except: pass
+                                
+                                if whatsapp_service.send_text_message(auto_reply_text):
+                                    time.sleep(0.5)
+                                    whatsapp_service.send_message_simple()
+                                    print(f"[Monitor] ✅ Auto-respuesta enviada a '{chat_id}'")
+                                    self.replied_chats.add(chat_id)  # Marcar como respondido
+                                    time.sleep(1)
+                                    print(f"[Monitor] ℹ️ NO se enviará notificación (esperando respuesta del cliente)")
+                                else:
+                                    print(f"[Monitor] ❌ Falló al escribir auto-respuesta")
+                                    debe_notificar = True  # Si falla, notificar de todos modos
+                            except Exception as e:
+                                print(f"[Monitor] ❌ Error enviando auto-respuesta: {e}")
+                                debe_notificar = True  # Si falla, notificar de todos modos
+                    
+                    # Cerrar el chat ahora (ESC)
+                    try:
+                        self.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+                    except: pass
+                    time.sleep(0.5)
+                    
+                    # PASO 2: Enviar notificación SOLO si corresponde
+                    if debe_notificar:
+                        resultado = self.enviar_notificacion(chat, whatsapp_service, mensajes_completos=mensajes)
+                        if resultado:
+                            print(f"[Monitor] ✅ Notificación {idx} enviada exitosamente")
+                        else:
+                            print(f"[Monitor] ❌ Falló notificación {idx}")
                     else:
-                        print(f"[Monitor] ❌ Falló notificación {idx}")
+                        print(f"[Monitor] ⏭️ Notificación {idx} omitida (esperando respuesta del cliente)")
             else:
                 print("[Monitor] ℹ️ No hay mensajes nuevos para notificar")
             
@@ -411,3 +493,77 @@ Detectado: {chat_info['timestamp']}"""
         print(f"[Monitor] ═══════════════════════════════════════\n")
         return elapsed_time
 
+    def leer_mensajes_chat_abierto(self):
+        """
+        Lee los mensajes del chat abierto actualmente.
+        Recorre de abajo hacia arriba hasta encontrar el último mensaje enviado por nosotros (outgoing).
+        Captura todos los mensajes entrantes (incoming) posteriores a ese.
+        
+        LÍMITE: Si no se encuentra mensaje de salida, solo lee los últimos 5 mensajes.
+        
+        Returns:
+            Lista de mensajes (texto) ordenados cronológicamente
+        """
+        try:
+            print("[Monitor] Leyendo mensajes del chat abierto...")
+            # Buscar todos los contenedores de mensajes (filas)
+            # Usamos un selector general para filas de mensajes
+            filas = self.driver.find_elements(By.CSS_SELECTOR, "div[role='row']")
+            
+            mensajes_nuevos = []
+            MAX_MENSAJES_SIN_SALIDA = 5  # Límite si no hay mensaje de salida
+            
+            # Recorrer de abajo hacia arriba (más reciente a más antiguo)
+            for fila in reversed(filas):
+                try:
+                    # Verificar si es mensaje de salida (nuestro)
+                    es_salida = fila.find_elements(By.CSS_SELECTOR, "div.message-out")
+                    if es_salida:
+                        # Encontramos el último mensaje que enviamos, paramos aquí
+                        print("[Monitor] Encontrado último mensaje enviado por nosotros. Deteniendo lectura.")
+                        break
+                    
+                    # Verificar si es mensaje de entrada (del cliente)
+                    es_entrada = fila.find_elements(By.CSS_SELECTOR, "div.message-in")
+                    if es_entrada:
+                        # Extraer texto
+                        try:
+                            # Intentar buscar el texto copiable
+                            texto_elem = fila.find_element(By.CSS_SELECTOR, "span.copyable-text")
+                            texto = texto_elem.text
+                        except:
+                            # Fallback: intentar buscar cualquier span con texto
+                            texto = fila.text
+                        
+                        # Extraer hora (opcional, pero útil)
+                        try:
+                            hora_elem = fila.find_element(By.CSS_SELECTOR, "span[dir='auto'].x1c4vz4f") # Ajustar selector si es necesario
+                            hora = hora_elem.text
+                        except:
+                            hora = ""
+                            
+                        # Limpiar y agregar
+                        if texto:
+                            # Opcional: Limpiar saltos de línea extra
+                            texto = texto.strip()
+                            if texto:
+                                mensajes_nuevos.append(f"[{hora}] {texto}" if hora else texto)
+                                
+                                # LÍMITE: Si ya tenemos MAX_MENSAJES_SIN_SALIDA mensajes y no hemos encontrado salida, detenemos
+                                if len(mensajes_nuevos) >= MAX_MENSAJES_SIN_SALIDA:
+                                    print(f"[Monitor] Alcanzado límite de {MAX_MENSAJES_SIN_SALIDA} mensajes sin encontrar mensaje de salida. Deteniendo lectura.")
+                                    break
+                            
+                except Exception as e:
+                    # Si falla leer una fila, continuamos con la siguiente
+                    continue
+            
+            # Invertir la lista para tener orden cronológico (antiguo -> reciente)
+            mensajes_nuevos.reverse()
+            
+            print(f"[Monitor] Leídos {len(mensajes_nuevos)} mensajes nuevos del cliente.")
+            return mensajes_nuevos
+            
+        except Exception as e:
+            print(f"[Monitor] Error al leer mensajes del chat: {e}")
+            return []

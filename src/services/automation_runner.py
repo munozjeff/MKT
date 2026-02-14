@@ -107,10 +107,12 @@ class AutomationRunner:
                 if self.monitor_service:
                     try:
                         # El tiempo del monitor se incluirá en el intervalo
-                        max_monitor_time = min(5, interval // 2)  # Máximo 5 seg o la mitad del intervalo
+                        max_monitor_time = min(30, interval // 2)  # Máximo 30 seg para procesar múltiples chats
+                        auto_reply_text = self.config.get("auto_reply_text")  # Nuevo: auto-respuesta
                         monitor_time = self.monitor_service.monitorear_y_notificar(
                             self.whatsapp_service, 
-                            max_time=max_monitor_time
+                            max_time=max_monitor_time,
+                            auto_reply_text=auto_reply_text
                         )
                         if monitor_time > 0:
                             print(f"⏱ Tiempo de monitoreo: {monitor_time:.1f}s")

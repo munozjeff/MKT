@@ -42,14 +42,17 @@ class SendView(ttk.Frame):
         config_frame = ttk.LabelFrame(main_frame, text="Configuración de Envío")
         config_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PADDING_MEDIUM))
         
-        # Grid layout
-        grid_opts = {'padx': 5, 'pady': 5, 'sticky': tk.W}
+        # === SECCIÓN SUPERIOR (Ancho Completo) ===
+        top_frame = ttk.Frame(config_frame)
+        top_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+        
+        grid_opts_top = {'padx': 5, 'pady': 5, 'sticky': tk.W}
         
         # 0. Selector de Modo
-        ttk.Label(config_frame, text="Modo de Envío:").grid(row=0, column=0, **grid_opts)
+        ttk.Label(top_frame, text="Modo de Envío:").grid(row=0, column=0, **grid_opts_top)
         self.var_mode = tk.StringVar(value="Individual")
-        frame_mode = ttk.Frame(config_frame)
-        frame_mode.grid(row=0, column=1, columnspan=2, **grid_opts)
+        frame_mode = ttk.Frame(top_frame)
+        frame_mode.grid(row=0, column=1, columnspan=2, **grid_opts_top)
         
         rb_ind = ttk.Radiobutton(frame_mode, text="Individual", variable=self.var_mode, value="Individual", command=self.on_mode_change)
         rb_ind.pack(side=tk.LEFT, padx=5)
@@ -59,11 +62,11 @@ class SendView(ttk.Frame):
         rb_rot.pack(side=tk.LEFT, padx=5)
         
         # 1. Perfil de Navegador
-        self.lbl_profile = ttk.Label(config_frame, text="Perfil:")
-        self.lbl_profile.grid(row=1, column=0, **grid_opts)
+        self.lbl_profile = ttk.Label(top_frame, text="Perfil:")
+        self.lbl_profile.grid(row=1, column=0, **grid_opts_top)
         
         # Contenedor para selector de perfiles (Single vs Multi)
-        self.frame_profiles = ttk.Frame(config_frame)
+        self.frame_profiles = ttk.Frame(top_frame)
         self.frame_profiles.grid(row=1, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
         
         # Modo Individual: Combobox
@@ -98,66 +101,105 @@ class SendView(ttk.Frame):
         self.profile_vars = {} # {profile_name: BooleanVar}
         
         
+        # === SECCIÓN INFERIOR (Dos Columnas) ===
+        columns_frame = ttk.Frame(config_frame)
+        columns_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        left_col = ttk.Frame(columns_frame)
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        
+        right_col = ttk.Frame(columns_frame)
+        right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        
+        grid_opts = {'padx': 5, 'pady': 5, 'sticky': tk.W}
+        
+        # --- COLUMNA IZQUIERDA (Archivo, Mensaje, Tiempos) ---
+        
         # 2. Archivo Excel
-        ttk.Label(config_frame, text="Archivo Excel:").grid(row=2, column=0, **grid_opts)
-        self.lbl_file = ttk.Label(config_frame, text="No seleccionado", foreground="gray")
-        self.lbl_file.grid(row=2, column=1, **grid_opts)
-        ttk.Button(config_frame, text="Cargar", command=self.load_excel_file).grid(row=2, column=2, padx=2)
+        ttk.Label(left_col, text="Archivo Excel:").grid(row=0, column=0, **grid_opts)
+        self.lbl_file = ttk.Label(left_col, text="No seleccionado", foreground="gray")
+        self.lbl_file.grid(row=0, column=1, **grid_opts)
+        ttk.Button(left_col, text="Cargar", command=self.load_excel_file).grid(row=0, column=2, padx=2)
         
         # 3. Tipo de Mensaje / Campaña
-        ttk.Label(config_frame, text=LBL_MESSAGE_TYPE).grid(row=3, column=0, **grid_opts)
-        self.combo_msg_type = ttk.Combobox(config_frame, values=MESSAGE_TYPES, state="readonly")
-        self.combo_msg_type.grid(row=3, column=1, **grid_opts)
+        ttk.Label(left_col, text=LBL_MESSAGE_TYPE).grid(row=1, column=0, **grid_opts)
+        self.combo_msg_type = ttk.Combobox(left_col, values=MESSAGE_TYPES, state="readonly")
+        self.combo_msg_type.grid(row=1, column=1, **grid_opts)
         self.combo_msg_type.bind("<<ComboboxSelected>>", self.on_msg_type_change)
         
-        ttk.Label(config_frame, text=LBL_CAMPAIGN_TYPE).grid(row=4, column=0, **grid_opts)
-        self.combo_camp_type = ttk.Combobox(config_frame, values=CAMPAIGN_TYPES, state="readonly")
-        self.combo_camp_type.grid(row=4, column=1, **grid_opts)
+        ttk.Label(left_col, text=LBL_CAMPAIGN_TYPE).grid(row=2, column=0, **grid_opts)
+        self.combo_camp_type = ttk.Combobox(left_col, values=CAMPAIGN_TYPES, state="readonly")
+        self.combo_camp_type.grid(row=2, column=1, **grid_opts)
         self.combo_camp_type.bind("<<ComboboxSelected>>", self.on_camp_type_change)
         
         # Selector de campaña principal (Predeterminada o Personalizada)
-        self.lbl_camp_select = ttk.Label(config_frame, text="Campaña:")
-        self.lbl_camp_select.grid(row=5, column=0, **grid_opts)
-        self.combo_campaign = ttk.Combobox(config_frame, state="readonly")
-        self.combo_campaign.grid(row=5, column=1, **grid_opts)
+        self.lbl_camp_select = ttk.Label(left_col, text="Campaña:")
+        self.lbl_camp_select.grid(row=3, column=0, **grid_opts)
+        self.combo_campaign = ttk.Combobox(left_col, state="readonly")
+        self.combo_campaign.grid(row=3, column=1, **grid_opts)
         
         # Selector de campaña personalizada (solo visible cuando tipo = Personalizada)
-        self.lbl_custom_campaign = ttk.Label(config_frame, text="Campaña Personalizada:")
-        self.combo_custom_campaign = ttk.Combobox(config_frame, state="readonly")
+        self.lbl_custom_campaign = ttk.Label(left_col, text="Campaña Personalizada:")
+        self.combo_custom_campaign = ttk.Combobox(left_col, state="readonly")
         
         # Carpeta Facturas (Oculto)
-        self.lbl_folder = ttk.Label(config_frame, text="Carpeta Facturas:")
-        self.btn_folder = ttk.Button(config_frame, text="Seleccionar", command=self.select_folder)
-        self.lbl_folder_path = ttk.Label(config_frame, text="", font=FONT_SMALL)
+        self.lbl_folder = ttk.Label(left_col, text="Carpeta Facturas:")
+        self.btn_folder = ttk.Button(left_col, text="Seleccionar", command=self.select_folder)
+        self.lbl_folder_path = ttk.Label(left_col, text="", font=FONT_SMALL)
         
         # Tipo de Base (Oculto)
-        self.lbl_base_type = ttk.Label(config_frame, text=LBL_BASE_TYPE)
-        self.combo_base_type = ttk.Combobox(config_frame, values=BASE_TYPES, state="readonly")
+        self.lbl_base_type = ttk.Label(left_col, text=LBL_BASE_TYPE)
+        self.combo_base_type = ttk.Combobox(left_col, values=BASE_TYPES, state="readonly")
         self.combo_base_type.bind("<<ComboboxSelected>>", self.on_base_type_change)
         
         # Intervalo Contacto (Oculto)
-        self.lbl_contact_int = ttk.Label(config_frame, text=LBL_CONTACT_INTERVAL)
-        self.ent_contact_int = ttk.Entry(config_frame, width=10)
+        self.lbl_contact_int = ttk.Label(left_col, text=LBL_CONTACT_INTERVAL)
+        self.ent_contact_int = ttk.Entry(left_col, width=10)
         
         # 4. Tiempos
-        ttk.Label(config_frame, text=LBL_INTERVAL).grid(row=10, column=0, **grid_opts)
-        self.ent_interval = ttk.Entry(config_frame, width=10)
+        ttk.Label(left_col, text=LBL_INTERVAL).grid(row=8, column=0, **grid_opts)
+        self.ent_interval = ttk.Entry(left_col, width=10)
         self.ent_interval.insert(0, "50") # Default actualizado
-        self.ent_interval.grid(row=10, column=1, **grid_opts)
+        self.ent_interval.grid(row=8, column=1, **grid_opts)
         
-        ttk.Label(config_frame, text=LBL_PAUSE).grid(row=11, column=0, **grid_opts)
-        self.ent_pause = ttk.Entry(config_frame, width=10)
+        ttk.Label(left_col, text=LBL_PAUSE).grid(row=9, column=0, **grid_opts)
+        self.ent_pause = ttk.Entry(left_col, width=10)
         self.ent_pause.insert(0, "10") # Default actualizado
-        self.ent_pause.grid(row=11, column=1, **grid_opts)
+        self.ent_pause.grid(row=9, column=1, **grid_opts)
+        
+        # --- COLUMNA DERECHA (Monitor, Auto-Respuesta, Rotación) ---
         
         # 5. Monitor de Mensajes Nuevos
-        ttk.Label(config_frame, text="Monitor - Número Notif.:").grid(row=12, column=0, **grid_opts)
-        self.ent_monitor_phone = ttk.Entry(config_frame, width=20)
-        self.ent_monitor_phone.grid(row=12, column=1, **grid_opts)
-        ttk.Label(config_frame, text="(Ej: +573001234567, vacío=deshabilitado)", font=("Arial", 8)).grid(row=12, column=2, padx=2, sticky=tk.W)
+        self.var_monitor_enabled = tk.BooleanVar(value=False)
+        self.chk_monitor = ttk.Checkbutton(
+            right_col, 
+            text="Activar Monitor", 
+            variable=self.var_monitor_enabled,
+            command=self.on_monitor_toggle
+        )
+        self.chk_monitor.grid(row=0, column=0, **grid_opts)
+        
+        ttk.Label(right_col, text="Número/Grupo Notif.:").grid(row=1, column=0, **grid_opts)
+        self.ent_monitor_phone = ttk.Entry(right_col, width=20, state="disabled")
+        self.ent_monitor_phone.grid(row=1, column=1, **grid_opts)
+        ttk.Label(right_col, text="(Ej: +573001234567 o nombre)", font=("Arial", 8)).grid(row=1, column=2, padx=2, sticky=tk.W)
+        
+        # 6. Auto-Respuesta (solo si Monitor activo)
+        self.var_autoreply_enabled = tk.BooleanVar(value=False)
+        self.chk_autoreply = ttk.Checkbutton(
+            right_col,
+            text="Auto-Respuesta",
+            variable=self.var_autoreply_enabled,
+            command=self.on_autoreply_toggle,
+            state="disabled"
+        )
+        self.chk_autoreply.grid(row=2, column=0, **grid_opts)
+        
+        self.ent_autoreply_text = ttk.Entry(right_col, width=30, state="disabled")
+        self.ent_autoreply_text.grid(row=2, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
         
         # Frame para configuración de Rotación (inicialmente oculto)
-        self.frame_rotation_config = ttk.Frame(config_frame)
+        self.frame_rotation_config = ttk.Frame(right_col)
         
         ttk.Label(self.frame_rotation_config, text="Perfiles Simultáneos:").grid(row=0, column=0, padx=5, pady=2, sticky=tk.W)
         self.ent_simultaneous = ttk.Entry(self.frame_rotation_config, width=10)
@@ -175,8 +217,12 @@ class SendView(ttk.Frame):
         self.ent_profile_cooldown.grid(row=2, column=1, padx=5, pady=2)
         ttk.Label(self.frame_rotation_config, text="(tiempo antes de reutilizar perfil)", font=("Arial", 8)).grid(row=2, column=2, padx=2, pady=2, sticky=tk.W)
         
-        # Botón Lanzar
-        ttk.Button(config_frame, text="LANZAR TAREA", command=self.launch_task).grid(row=15, column=0, columnspan=3, pady=20, sticky="ew")
+        # === BOTÓN LANZAR (Parte inferior de config_frame, fuera de las columnas) ===
+        bottom_frame = ttk.Frame(config_frame)
+        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=10)
+        
+        self.btn_launch = ttk.Button(bottom_frame, text="LANZAR TAREA", command=self.launch_task)
+        self.btn_launch.pack(fill=tk.X)
         
         # -- Panel Tareas Activas (Derecha) --
         tasks_frame = ttk.LabelFrame(main_frame, text="Tareas Activas")
@@ -212,7 +258,7 @@ class SendView(ttk.Frame):
             self.frame_dist_container.pack(fill=tk.BOTH, expand=True)
             self.btn_refresh.pack(side=tk.RIGHT, padx=2)
             self.lbl_profile.config(text="Perfiles:")
-            self.frame_rotation_config.grid(row=13, column=0, columnspan=3, pady=5, sticky=tk.W)
+            self.frame_rotation_config.grid(row=3, column=0, columnspan=3, pady=10, sticky="ew")
     
     def toggle_all_profiles(self):
         val = self.var_select_all.get()
@@ -294,6 +340,22 @@ class SendView(ttk.Frame):
         # Feedback visual si no hay coincidencias (raro si viene del combo)
         if count == 0:
             pass
+    
+    def on_monitor_toggle(self):
+        """Enable/disable monitor input and auto-reply checkbox."""
+        enabled = self.var_monitor_enabled.get()
+        self.ent_monitor_phone.config(state="normal" if enabled else "disabled")
+        self.chk_autoreply.config(state="normal" if enabled else "disabled")
+        
+        # Clear and disable auto-reply if monitor is disabled
+        if not enabled:
+            self.var_autoreply_enabled.set(False)
+            self.on_autoreply_toggle()
+
+    def on_autoreply_toggle(self):
+        """Enable/disable auto-reply text input."""
+        enabled = self.var_autoreply_enabled.get()
+        self.ent_autoreply_text.config(state="normal" if enabled else "disabled")
             
     def load_excel_file(self):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
@@ -412,8 +474,26 @@ class SendView(ttk.Frame):
             "pause": self.ent_pause.get(),
             "message_type": self.combo_msg_type.get(),
             "campaign_type": self.combo_camp_type.get(),
-            "monitor_phone": self.ent_monitor_phone.get().strip()  # Nuevo: número para notificaciones
         }
+        
+        # Monitor Configuration
+        monitor_contact = None
+        auto_reply_text = None
+        
+        if self.var_monitor_enabled.get():
+            monitor_contact = self.ent_monitor_phone.get().strip()
+            if not monitor_contact:
+                messagebox.showwarning("Advertencia", "Monitor activado pero sin número de notificación configurado.")
+                return
+            
+            if self.var_autoreply_enabled.get():
+                auto_reply_text = self.ent_autoreply_text.get().strip()
+                if not auto_reply_text:
+                    messagebox.showwarning("Advertencia", "Auto-respuesta activada pero sin mensaje configurado.")
+                    return
+        
+        config["monitor_phone"] = monitor_contact
+        config["auto_reply_text"] = auto_reply_text
         
         if not config["message_type"]:
              messagebox.showerror(MSG_ERROR, "Seleccione Tipo de Mensaje")

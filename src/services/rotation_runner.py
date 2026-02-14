@@ -320,10 +320,12 @@ class RotationAutomationRunner:
                 if monitor_service:
                     try:
                         base_interval = int(self.config.get("interval", 20))
-                        max_monitor_time = min(5, base_interval // 2)
+                        max_monitor_time = min(30, base_interval // 2)  # Máximo 30 seg para procesar múltiples chats
+                        auto_reply_text = self.config.get("auto_reply_text")  # Extraer auto-respuesta
                         monitor_time = monitor_service.monitorear_y_notificar(
                             service, 
-                            max_time=max_monitor_time
+                            max_time=max_monitor_time,
+                            auto_reply_text=auto_reply_text
                         )
                         if monitor_time > 0:
                             print(f"[{profile.name}] ⏱ Tiempo de monitoreo: {monitor_time:.1f}s")
