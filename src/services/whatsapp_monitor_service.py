@@ -411,57 +411,80 @@ Detectado: {chat_info['timestamp']}
                     
                     print(f"\n[Monitor] Procesando notificación {idx}/{len(chats_nuevos)}...")
                     
-                    # PASO 1: Marcar el chat como leído PERO NO CERRARLO AÚN
                     if not self.marcar_chat_como_leido(chat, close_after=False):
                         print(f"[Monitor] ⚠ No se pudo marcar como leído, continuando...")
                         continue
                     
-                    # PASO 1.5: Leer los mensajes completos
+                    # PASO 1.5: Contar mensajes de salida para determinar acción
+                    num_salidas = self.contar_mensajes_salida()
+                    
+                    # PASO 1.6: Leer los mensajes completos
                     mensajes = self.leer_mensajes_chat_abierto()
                     
-                    # LÓGICA DE AUTO-RESPUESTA Y NOTIFICACIÓN
-                    # Si auto_reply_text está activo:
-                    #   - Primera vez (nuevo chat) → enviar auto-respuesta, NO notificar
-                    #   - Segunda vez (ya respondido) → NO auto-respuesta, SÍ notificar
-                    # Si auto_reply_text NO está activo → siempre notificar
+                    # ═══════════════════════════════════════════════════════════════
+                    # LÓGICA MEJORADA DE AUTO-RESPUESTA Y NOTIFICACIÓN
+                    # Basada en el conteo de mensajes de salida en el historial:
+                    #
+                    # 0 mensajes de salida → Chat completamente nuevo
+                    #     Acción: SOLO NOTIFICAR (para que operador lo vea)
+                    #
+                    # 1 mensaje de salida → Primera respuesta enviada
+                    #     Acción: SOLO AUTO-RESPONDER (dar seguimiento automático)
+                    #
+                    # 2+ mensajes de salida → Conversación ya establecida
+                    #     Acción: SOLO NOTIFICAR (evitar spam de auto-respuestas)
+                    # ═══════════════════════════════════════════════════════════════
                     
-                    debe_notificar = True  # Por defecto, notificar
+                    debe_notificar = False
+                    debe_auto_responder = False
                     
-                    if auto_reply_text:
-                        chat_id = chat['nombre']
+                    if num_salidas == 0:
+                        # Chat nuevo sin interacción previa
+                        print(f"[Monitor] 📋 Chat sin mensajes de salida previos")
+                        print(f"[Monitor] → SOLO NOTIFICAR (chat nuevo)")
+                        debe_notificar = True
+                        debe_auto_responder = False
                         
-                        if chat_id in self.replied_chats:
-                            # Ya enviamos auto-respuesta antes
-                            # AHORA SÍ notificamos (es una respuesta del cliente después de nuestra auto-respuesta)
-                            print(f"[Monitor] ✅ Chat '{chat_id}' ya tiene auto-respuesta enviada")
-                            print(f"[Monitor] 📤 Enviando notificación de respuesta del cliente...")
-                            debe_notificar = True
+                    elif num_salidas == 1:
+                        # Solo una respuesta previa (probablemente la auto-respuesta o respuesta manual)
+                        print(f"[Monitor] 🔁 Chat con 1 mensaje de salida")
+                        
+                        if auto_reply_text:
+                            print(f"[Monitor] → SOLO AUTO-RESPONDER (dar seguimiento)")
+                            debe_notificar = False
+                            debe_auto_responder = True
                         else:
-                            # Primera vez que detectamos este chat
-                            # Enviar auto-respuesta pero NO notificar aún
-                            print(f"[Monitor] 🤖 Primer mensaje de '{chat_id}', enviando auto-respuesta...")
-                            debe_notificar = False  # NO notificar en esta primera detección
-                            
+                            # Si no hay auto-respuesta configurada, solo notificar
+                            print(f"[Monitor] → SOLO NOTIFICAR (auto-respuesta desactivada)")
+                            debe_notificar = True
+                            debe_auto_responder = False
+                        
+                    else:  # 2 o más mensajes de salida
+                        # Ya existe conversación establecida
+                        print(f"[Monitor] 💬 Chat con {num_salidas} mensajes de salida (conversación establecida)")
+                        print(f"[Monitor] → SOLO NOTIFICAR (evitar spam de auto-respuestas)")
+                        debe_notificar = True
+                        debe_auto_responder = False
+                    
+                    # EJECUTAR AUTO-RESPUESTA si corresponde
+                    if debe_auto_responder and auto_reply_text:
+                        print(f"[Monitor] 🤖 Enviando auto-respuesta...")
+                        try:
+                            # Asegurar foco antes de escribir
                             try:
-                                # Asegurar foco antes de escribir
-                                try:
-                                    input_box = self.driver.switch_to.active_element
-                                    input_box.click()
-                                except: pass
-                                
-                                if whatsapp_service.send_text_message(auto_reply_text):
-                                    time.sleep(0.5)
-                                    whatsapp_service.send_message_simple()
-                                    print(f"[Monitor] ✅ Auto-respuesta enviada a '{chat_id}'")
-                                    self.replied_chats.add(chat_id)  # Marcar como respondido
-                                    time.sleep(1)
-                                    print(f"[Monitor] ℹ️ NO se enviará notificación (esperando respuesta del cliente)")
-                                else:
-                                    print(f"[Monitor] ❌ Falló al escribir auto-respuesta")
-                                    debe_notificar = True  # Si falla, notificar de todos modos
-                            except Exception as e:
-                                print(f"[Monitor] ❌ Error enviando auto-respuesta: {e}")
-                                debe_notificar = True  # Si falla, notificar de todos modos
+                                input_box = self.driver.switch_to.active_element
+                                input_box.click()
+                            except: pass
+                            
+                            if whatsapp_service.send_text_message(auto_reply_text):
+                                time.sleep(0.5)
+                                whatsapp_service.send_message_simple()
+                                print(f"[Monitor] ✅ Auto-respuesta enviada")
+                                time.sleep(1)
+                            else:
+                                print(f"[Monitor] ❌ Falló al escribir auto-respuesta")
+                        except Exception as e:
+                            print(f"[Monitor] ❌ Error enviando auto-respuesta: {e}")
                     
                     # Cerrar el chat ahora (ESC)
                     try:
@@ -469,7 +492,7 @@ Detectado: {chat_info['timestamp']}
                     except: pass
                     time.sleep(0.5)
                     
-                    # PASO 2: Enviar notificación SOLO si corresponde
+                    # EJECUTAR NOTIFICACIÓN si corresponde
                     if debe_notificar:
                         resultado = self.enviar_notificacion(chat, whatsapp_service, mensajes_completos=mensajes)
                         if resultado:
@@ -477,7 +500,7 @@ Detectado: {chat_info['timestamp']}
                         else:
                             print(f"[Monitor] ❌ Falló notificación {idx}")
                     else:
-                        print(f"[Monitor] ⏭️ Notificación {idx} omitida (esperando respuesta del cliente)")
+                        print(f"[Monitor] ⏭️ Notificación {idx} omitida (según lógica de conteo de mensajes)")
             else:
                 print("[Monitor] ℹ️ No hay mensajes nuevos para notificar")
             
@@ -567,3 +590,34 @@ Detectado: {chat_info['timestamp']}
         except Exception as e:
             print(f"[Monitor] Error al leer mensajes del chat: {e}")
             return []
+
+    def contar_mensajes_salida(self):
+        """
+        Cuenta el número total de mensajes de salida (enviados por nosotros) en el chat actual.
+        Esto permite determinar el nivel de interacción con el chat.
+        
+        Returns:
+            int: Número de mensajes de salida encontrados
+        """
+        try:
+            print("[Monitor] Contando mensajes de salida...")
+            # Buscar TODOS los contenedores de mensajes
+            filas = self.driver.find_elements(By.CSS_SELECTOR, "div[role='row']")
+            
+            contador_salida = 0
+            
+            for fila in filas:
+                try:
+                    # Verificar si es mensaje de salida (nuestro)
+                    es_salida = fila.find_elements(By.CSS_SELECTOR, "div.message-out")
+                    if es_salida:
+                        contador_salida += 1
+                except:
+                    continue
+            
+            print(f"[Monitor] Total de mensajes de salida: {contador_salida}")
+            return contador_salida
+            
+        except Exception as e:
+            print(f"[Monitor] Error contando mensajes de salida: {e}")
+            return 0

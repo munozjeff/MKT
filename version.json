@@ -1,8 +1,8 @@
 {
-    "version": "1.2.2",
-    "build": "20260210",
-    "release_date": "2026-02-10",
-    "release_notes": "- Mejora en detección de sesión cerrada (QR/Login) proactiva y reactiva\n- Bloqueo automático de perfiles al cerrar sesión o fallar inicio\n- Soporte para envío a grupos (ignorando validación de número)\n- Edición y eliminación masiva de perfiles",
+    "version": "1.2.4",
+    "build": "20260214",
+    "release_date": "2026-02-14",
+    "release_notes": "- Lógica inteligente de auto-respuesta basada en conteo de mensajes\\n  · 0 mensajes de salida: Solo notifica (chat nuevo)\\n  · 1 mensaje de salida: Solo auto-responde (dar seguimiento)\\n  · 2+ mensajes de salida: Solo notifica (conversación establecida)\\n- Previene envío de auto-respuestas duplicadas\\n- Detecta y maneja conversaciones pre-existentes correctamente\\n- Funciona incluso con respuestas manuales del operador",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
