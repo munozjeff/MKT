@@ -392,8 +392,12 @@ class RotationAutomationRunner:
                 # 1. Clic en Nuevo Chat
                 service.click_new_chat()
                 
+
                 # Buscar contacto
                 if not service.search_contact(target_phone):
+                    # CHECK REACTIVO: Si falla la búsqueda, verificar sesión
+                    self._check_session_lockout(service, profile_name, "Error búsqueda contacto")
+
                     if attempt_index < len(phone_list) - 1:
                         self._update_progress(
                             f"[{profile_name}] {phone}: Intento {attempt_index+1} fallido, probando alternativo..."
@@ -419,6 +423,9 @@ class RotationAutomationRunner:
                         return
                 
                 if not has_whatsapp:
+                    # CHECK REACTIVO: Verificar sesión también aquí
+                    self._check_session_lockout(service, profile_name, "Sin WhatsApp")
+
                     service.go_back()
                     if attempt_index < len(phone_list) - 1:
                         self._update_progress(
@@ -430,7 +437,7 @@ class RotationAutomationRunner:
                         self.report_service.add_entry(phone, status)
                         self._update_progress(f"[{profile_name}] {phone}: {status}")
                         return
-                
+
                 service.open_chat()
                 
                 # Preparar mensaje
@@ -502,9 +509,40 @@ class RotationAutomationRunner:
                     continue
                 else:
                     status = f"Error: {str(e)}"
+                    
+                # CHECK REACTIVO: Ante excepcion, verificar sesión
+                self._check_session_lockout(service, profile_name, f"Excepción: {e}")
         
         self.report_service.add_entry(phone, status)
         self._update_progress(f"[{profile_name}] {phone}: {status}")
+
+    def _check_session_lockout(self, service, profile_name, context_msg):
+        """
+        Verifica si la sesión se cerró (QR/Login visible) y etiqueta el perfil como BLOQUEADO.
+        Lanza excepción para detener el worker.
+        """
+        try:
+            if not service.is_session_active():
+                print(f"[{profile_name}] ⛔ Sesión cerrada detectada ({context_msg}). Marcando BLOQUEADO.")
+                
+                # Buscar objeto perfil
+                profile = next((p for p in self.all_profiles if p.name == profile_name), None)
+                if profile:
+                    try:
+                        if "BLOQUEADO" not in profile.tags:
+                            profile.tags.append("BLOQUEADO")
+                            profile.save_metadata()
+                            print(f"[{profile_name}] ✅ Etiqueta BLOQUEADO guardada.")
+                    except Exception as e:
+                        print(f"[{profile_name}] ❌ Error guardando etiqueta: {e}")
+                
+                raise Exception(f"Sesión cerrada (Perfil BLOQUEADO) - {context_msg}")
+        except Exception as e:
+            # Re-lanzar si es nuestra excepción de bloqueo
+            if "BLOQUEADO" in str(e):
+                raise e
+            # Ignore other errors during check
+            pass
     
     def _update_progress(self, current_action):
         """Actualiza el progreso general."""
