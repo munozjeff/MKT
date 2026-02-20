@@ -117,18 +117,28 @@ class WhatsAppMonitorService:
             print(f"[Monitor] Error al obtener chats: {e}")
             return []
     
-    def detectar_nuevos_chats(self, chats_actuales):
+    def detectar_nuevos_chats(self, chats_actuales, force_all=False):
         """
         Detecta qué chats tienen mensajes nuevos comparando con el estado anterior.
         Ahora compara contenido/hora, no solo nombres.
         
         Args:
             chats_actuales: Lista de chats detectados actualmente (no leídos)
+            force_all: Si es True, procesa TODOS los chats sin importar si ya fueron vistos
+                      (útil para modo Monitor independiente)
             
         Returns:
             Lista de chats que requieren notificación
         """
         print(f"[Monitor] Analizando {len(chats_actuales)} chats activos...")
+        
+        # Si force_all está activo, procesar todos sin filtro
+        if force_all:
+            print(f"[Monitor] 🔄 Modo FORCE_ALL activo - procesando todos los chats no leídos")
+            for chat in chats_actuales:
+                nombre = chat.get('nombre', 'Desconocido')
+                print(f"[Monitor] 📨 Chat pendiente: '{nombre}'")
+            return chats_actuales
         
         chats_para_notificar = []
         nuevos_estados = {}
@@ -395,9 +405,9 @@ Detectado: {chat_info['timestamp']}
             print("[Monitor] Buscando chats no leídos...")
             chats = self.obtener_chats_no_leidos()
             
-            # Detectar nuevos chats
+            # Detectar nuevos chats (force_all=True para procesar TODOS en modo monitor)
             print("[Monitor] Analizando chats nuevos...")
-            chats_nuevos = self.detectar_nuevos_chats(chats)
+            chats_nuevos = self.detectar_nuevos_chats(chats, force_all=True)
             
             if chats_nuevos:
                 print(f"\n[Monitor] 🆕 Se detectaron {len(chats_nuevos)} chat(s) nuevo(s)")

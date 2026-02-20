@@ -1,0 +1,6 @@
+src/services/whatsapp_monitor_service.py
+src/ui/app.py
+src/ui/components/__init__.py
+src/ui/components/send_view.py
+"c\357\200\272tempgit_modified.txt"
+src/ui/components/monitor_view.py

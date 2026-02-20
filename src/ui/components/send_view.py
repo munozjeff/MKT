@@ -458,7 +458,7 @@ class SendView(ttk.Frame):
             messagebox.showerror(MSG_ERROR, "Seleccione al menos un perfil")
             return
             
-        # 2. Validaciones generales (resto igual...)
+        # 2. Validaciones generales
         if not hasattr(self, 'excel_path'):
             messagebox.showerror(MSG_ERROR, "Cargue un archivo Excel")
             return

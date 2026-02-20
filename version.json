@@ -1,8 +1,8 @@
 {
-    "version": "1.2.5",
-    "build": "20260217",
-    "release_date": "2026-02-17",
-    "release_notes": "- Detección automática de perfiles bloqueados en todos los modos\\n  · Rotation Runner: Verifica sesión en puntos de fallo (búsqueda, verificación)\\n  · Monitor Runner: Detecta cierre de sesión durante monitoreo\\n  · Perfiles bloqueados se marcan automáticamente con tag BLOQUEADO\\n- Previene uso de perfiles con sesión cerrada/QR visible\\n- Mejora la robustez del sistema ante bloqueos de WhatsApp",
+    "version": "1.2.6",
+    "build": "20260220",
+    "release_date": "2026-02-20",
+    "release_notes": "- Exportación de números pendientes a Excel al finalizar el envío\\n- Detección de columna 'Celular' insensible a mayúsculas/minúsculas al cargar listas\\n- Nuevo componente monitor_view.py para la vista de monitoreo\\n- Mejoras en whatsapp_monitor_service.py y send_view.py\\n- Actualización de componentes UI (app.py, __init__.py)",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

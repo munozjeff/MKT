@@ -8,6 +8,7 @@ from .components.contacts_view import ContactsView
 from .components.campaigns_view import CampaignsView
 from .components.browsers_view import BrowsersView
 from .components.send_view import SendView
+from .components.monitor_view import MonitorView
 from .components.update_dialog import UpdateDialog, UpdateProgressDialog
 from ..services.update_service import UpdateService
 import os
@@ -55,6 +56,7 @@ class App(tk.Tk):
         self.create_sidebar_button("Contactos", self.show_contacts)
         self.create_sidebar_button("Campañas", self.show_campaigns)
         self.create_sidebar_button("Navegadores", self.show_browsers)
+        self.create_sidebar_button("MONITOR", self.show_monitor, style="Info.TButton")
         ttk.Separator(self.sidebar, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5, pady=10)
         self.create_sidebar_button("ENVIAR MENSAJES", self.show_send, style="Accent.TButton")
         
@@ -109,6 +111,10 @@ class App(tk.Tk):
     def show_send(self):
         self.clear_content()
         SendView(self.content_area).pack(fill=tk.BOTH, expand=True)
+    
+    def show_monitor(self):
+        self.clear_content()
+        MonitorView(self.content_area).pack(fill=tk.BOTH, expand=True)
     
     # ========== MÉTODOS DE ACTUALIZACIÓN ==========
     
