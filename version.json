@@ -1,8 +1,8 @@
 {
     "version": "1.2.7",
-    "build": "20260311",
-    "release_date": "2026-03-11",
-    "release_notes": "- Detección dual de campos de búsqueda en WhatsApp Web (<p> y <input>) en search_contact y open_chat\\n- Selector de campo de búsqueda basado en data-tab y html-input (estable ante cambios de aria-label)\\n- Detección robusta de contactos con WhatsApp en check_contact_exists (normalize-space y fallback DOM)\\n- Búsqueda simultánea de ambos campos con operador XPath union",
+    "build": "20260317",
+    "release_date": "2026-03-17",
+    "release_notes": "- Detección de perfiles bloqueados por QR al iniciar envío de mensajes\\n- Perfiles bloqueados descartados automáticamente y reemplazados\\n- Gestión exclusiva de QR en sección 'browsers' sin marcar perfil como bloqueado\\n- Detección dual de campos de búsqueda en WhatsApp Web (<p> y <input>)\\n- Mejoras de estabilidad en rotation_runner y automation_runner",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
