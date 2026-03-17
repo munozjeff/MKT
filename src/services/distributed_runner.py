@@ -89,10 +89,10 @@ class DistributedAutomationRunner:
                 print(f"[{profile.name}] Falló al iniciar driver")
                 return
                 
-            # 2. Verificar Login
-            print(f"[{profile.name}] Esperando login...")
-            if not self._wait_for_login(service):
-                print(f"[{profile.name}] Timeout login")
+            # 2. Verificar Login / Detectar QR de bloqueo
+            print(f"[{profile.name}] Verificando sesión...")
+            if not self._wait_for_login(service, profile):
+                print(f"[{profile.name}] Login fallido o QR detectado — worker omitido.")
                 return
 
             print(f"[{profile.name}] Listo para enviar.")
@@ -149,9 +149,29 @@ class DistributedAutomationRunner:
                 if service in self.active_services:
                     self.active_services.remove(service)
 
-    def _wait_for_login(self, service):
-        """Espera hasta 60s por login."""
-        for _ in range(60):
+    def _wait_for_login(self, service, profile) -> bool:
+        """
+        Espera hasta que el usuario inicie sesión.
+        En el contexto de ENVÍO: si detecta QR inmediatamente, marca el perfil
+        como BLOQUEADO y aborta este worker.
+        """
+        # Dar tiempo a que WhatsApp Web cargue antes de verificar
+        time.sleep(4)
+
+        # --- DETECCIÓN INMEDIATA DE QR (Perfil Bloqueado en contexto de Envío) ---
+        if service.is_qr_visible():
+            print(f"[{profile.name}] ⛔ QR detectado al inicio → marcando BLOQUEADO y descartando.")
+            try:
+                if "BLOQUEADO" not in profile.tags:
+                    profile.tags.append("BLOQUEADO")
+                    profile.save_metadata()
+                    print(f"[{profile.name}] ✅ Etiqueta BLOQUEADO guardada.")
+            except Exception as e:
+                print(f"[{profile.name}] ❌ Error guardando etiqueta BLOQUEADO: {e}")
+            return False
+
+        # Sin QR: esperar login normal (~56s restantes)
+        for _ in range(56):
             if self.stop_event.is_set(): return False
             if service.is_logged_in(): return True
             time.sleep(1)

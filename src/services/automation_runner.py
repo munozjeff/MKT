@@ -60,16 +60,35 @@ class AutomationRunner:
                 
                 raise Exception("Fallo inicio navegador (Perfil BLOQUEADO)")
             
-            # 2. Esperar login
+            # 2. Verificar estado de sesión al inicio (contexto de ENVÍO)
+            if self.progress_callback:
+                self.progress_callback(0, len(self.phone_numbers), "Verificando sesión...")
+
+            # Dar un momento a que WhatsApp Web cargue completamente
+            time.sleep(4)
+
+            # --- DETECCIÓN INMEDIATA DE QR (Perfil Bloqueado en contexto de Envío) ---
+            # Si el QR aparece inmediatamente al abrir el navegador en un envío,
+            # es señal de que la sesión fue cerrada (perfil bloqueado por WhatsApp).
+            # En este contexto NO esperamos al usuario: marcamos BLOQUEADO y abortamos.
+            if self.whatsapp_service.is_qr_visible():
+                if self.progress_callback:
+                    self.progress_callback(0, len(self.phone_numbers), f"⛔ QR detectado al inicio — Perfil BLOQUEADO")
+                print(f"[{self.profile.name}] QR detectado inmediatamente en contexto de envío → marcando BLOQUEADO.")
+                try:
+                    if "BLOQUEADO" not in self.profile.tags:
+                        self.profile.tags.append("BLOQUEADO")
+                        self.profile.save_metadata()
+                        print(f"[{self.profile.name}] ✅ Etiqueta BLOQUEADO guardada.")
+                except Exception as tag_err:
+                    print(f"[{self.profile.name}] ❌ Error guardando etiqueta: {tag_err}")
+                raise Exception("QR detectado al inicio de envío — Perfil BLOQUEADO")
+
+            # Si no hay QR, esperar login normal (máx 5 min)
             if self.progress_callback:
                 self.progress_callback(0, len(self.phone_numbers), "Esperando inicio de sesión...")
-                
-            # Loop simple para esperar login (el usuario debe escanear QR si no está logueado)
-            # En la versión original había un messagebox, aquí asumimos que el usuario lo ve en la UI principal
-            # o que verificamos el login periódicamente.
-            # Para simplificar, esperamos un tiempo o checkeamos en loop
-            
-            max_wait = 300 # 5 min max para login inicial
+
+            max_wait = 300  # 5 min max para login inicial
             start_wait = time.time()
             while not self.stop_event.is_set():
                 if self.whatsapp_service.is_logged_in():

@@ -168,6 +168,35 @@ class WhatsAppService:
         except:
             return False
 
+    def is_qr_visible(self) -> bool:
+        """
+        Detecta rápidamente si el código QR está visible (sesión no iniciada / perfil bloqueado).
+        NO usa waits largos — es una verificación instantánea.
+        
+        Returns:
+            bool: True si el QR está visible, False si no
+        """
+        try:
+            # 1. Canvas QR
+            if self.driver.find_elements(By.CSS_SELECTOR, "canvas[aria-label*='Scan']"):
+                return True
+            # 2. Landing wrapper (página de login)
+            if self.driver.find_elements(By.CLASS_NAME, "landing-wrapper"):
+                return True
+            # 3. Textos de login
+            login_texts = [
+                "//div[contains(text(), 'Pasos para iniciar sesión')]",
+                "//div[contains(text(), 'Vincular con el número de teléfono')]",
+                "//div[contains(text(), 'Use WhatsApp on your computer')]",
+                "//div[contains(text(), 'To use WhatsApp on your computer')]",
+            ]
+            for xpath in login_texts:
+                if self.driver.find_elements(By.XPATH, xpath):
+                    return True
+            return False
+        except Exception:
+            return False
+
     def is_session_active(self) -> bool:
         """
         Verifica si la sesión está activa buscando indicadores de desconexión (QR, textos de login).
@@ -240,29 +269,38 @@ class WhatsAppService:
                 print(f"Error click new chat: {e}")
     
     def search_contact(self, phone_number: str) -> bool:
-        """Busca un contacto por número de teléfono."""
+        """Busca un contacto por número de teléfono.
+        
+        Detecta simultáneamente dos variantes del campo de búsqueda:
+        - <p> editable (modal 'Nuevo chat')
+        - <input aria-label='Buscar un nombre o número'> (barra lateral)
+        El operador XPath '|' retorna el que aparezca primero.
+        """
         try:
-            # Sin sleep inicial innecesario
-            
-            #input_field = self.wait.until(
-            #    EC.presence_of_element_located((By.XPATH, '//p[@class="selectable-text copyable-text x15bjb6t x1n2onr6"]'))
-            #)
-            input_field = self.wait.until(
-                EC.presence_of_element_located((
-                    By.XPATH, '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
-                ))
-            )
+            short_wait = WebDriverWait(self.driver, 10)
 
-            # Limpiar: Ctrl+A -> Delete es rapido
+            # Un solo wait detecta cualquiera de los dos campos al mismo tiempo
+            try:
+                input_field = short_wait.until(
+                    EC.presence_of_element_located((
+                        By.XPATH,
+                        '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
+                        ' | //input[@data-tab="3" and contains(@class,"html-input")]'
+                    ))
+                )
+            except Exception:
+                print("Error al buscar contacto: no se encontró ningún campo de búsqueda")
+                return False
+
+            # Limpiar: Ctrl+A -> Delete es rápido
             input_field.send_keys(Keys.CONTROL + "a")
             input_field.send_keys(Keys.DELETE)
-            
+
             # Buscar
             input_field.send_keys(phone_number)
-            # Pequeña espera computacional para que WA procese la búsqueda
-            # No podemos eliminarla del todo porque WA tarda en filtrar
-            time.sleep(0.8) 
-            
+            # Pequeña espera para que WA procese y filtre los resultados
+            time.sleep(0.8)
+
             return True
         except Exception as e:
             print(f"Error al buscar contacto: {e}")
@@ -289,11 +327,13 @@ class WhatsAppService:
                 # Esperamos que aparezca la lista de resultados o el mensaje de 'no encontrado'
                 # WA suele mostrar "Contactos en WhatsApp"
                 try:
+                    print("Esperando que se detecte el contacto")
                     short_wait.until(
                         EC.presence_of_element_located((
                             By.XPATH, "//span[contains(text(), 'Contactos en WhatsApp') or contains(text(), 'Usuarios que no están en tus contactos')]"
                         ))
                     )
+                    print("contacto detectado")
                     return True, True, ""
                 except:
                     # Si no aparece lo anterior, quizás es inválido
@@ -303,6 +343,7 @@ class WhatsAppService:
         except Exception as e:
             print(f"Error al verificar contacto: {e}")
             return False, False, str(e)
+    
     
     def handle_connection_error(self):
         """Maneja errores de conexión a Internet."""
@@ -343,17 +384,31 @@ class WhatsAppService:
                 pass
     
     def open_chat(self) -> bool:
-        """Abre el chat del contacto encontrado."""
+        """Abre el chat del contacto encontrado.
+        
+        Detecta simultáneamente dos variantes del campo de búsqueda:
+        - <p> editable (modal 'Nuevo chat')
+        - <input aria-label='Buscar un nombre o número'> (barra lateral)
+        El operador XPath '|' retorna el que aparezca primero.
+        """
         try:
-            # Enter directo en el campo de busqueda suele abrir el primer resultado
-            input_field = self.wait.until(
-                EC.presence_of_element_located((
-                    By.XPATH, '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
-                ))
-            )
+            short_wait = WebDriverWait(self.driver, 10)
+
+            # Un solo wait detecta cualquiera de los dos campos al mismo tiempo
+            try:
+                input_field = short_wait.until(
+                    EC.presence_of_element_located((
+                        By.XPATH,
+                        '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
+                        ' | //input[@data-tab="3" and contains(@class,"html-input")]'
+                    ))
+                )
+            except Exception:
+                print("Error al abrir chat: no se encontró ningún campo de búsqueda")
+                return False
+
+            # Enter abre el primer resultado de la búsqueda
             input_field.send_keys(Keys.ENTER)
-            # Esperar a que cargue el chat (buscar elemento de chat activo)
-            # self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div._ak1q')))
             return True
         except Exception as e:
             print(f"Error al abrir chat: {e}")

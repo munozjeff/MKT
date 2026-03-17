@@ -1,8 +1,8 @@
 {
-    "version": "1.2.6",
-    "build": "20260220",
-    "release_date": "2026-02-20",
-    "release_notes": "- Exportación de números pendientes a Excel al finalizar el envío\\n- Detección de columna 'Celular' insensible a mayúsculas/minúsculas al cargar listas\\n- Nuevo componente monitor_view.py para la vista de monitoreo\\n- Mejoras en whatsapp_monitor_service.py y send_view.py\\n- Actualización de componentes UI (app.py, __init__.py)",
+    "version": "1.2.7",
+    "build": "20260311",
+    "release_date": "2026-03-11",
+    "release_notes": "- Detección dual de campos de búsqueda en WhatsApp Web (<p> y <input>) en search_contact y open_chat\\n- Selector de campo de búsqueda basado en data-tab y html-input (estable ante cambios de aria-label)\\n- Detección robusta de contactos con WhatsApp en check_contact_exists (normalize-space y fallback DOM)\\n- Búsqueda simultánea de ambos campos con operador XPath union",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

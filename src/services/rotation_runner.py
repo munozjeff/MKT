@@ -200,16 +200,18 @@ class RotationAutomationRunner:
             for p in self.available_profiles:
                 if p.name in active_names:
                     continue  # Ya está activo
+                if "BLOQUEADO" in p.tags:
+                    continue  # Perfil bloqueado por WhatsApp — nunca seleccionar
                 if p in self.recently_used:
                     continue  # Evitar repetir hasta rotar todos
-                
+
                 # Verificar cooldown temporal
                 if self.profile_cooldown_minutes > 0 and p.name in self.profile_last_used:
                     last_used = self.profile_last_used[p.name]
                     cooldown_delta = timedelta(minutes=self.profile_cooldown_minutes)
                     if now - last_used < cooldown_delta:
                         continue  # Aún no ha pasado el tiempo de cooldown
-                
+
                 candidates.append(p)
             
             # Si no hay candidatos, intentar resetear el pool de usados recientemente
@@ -220,19 +222,21 @@ class RotationAutomationRunner:
                     if p.name in active_names
                 ]
                 
-                # Recalcular candidatos (ahora solo respetando cooldown)
+                # Recalcular candidatos (ahora solo respetando cooldown, sin recently_used)
                 candidates = []
                 for p in self.available_profiles:
                     if p.name in active_names:
                         continue
-                    
+                    if "BLOQUEADO" in p.tags:
+                        continue  # Perfil bloqueado — nunca seleccionar
+
                     # Verificar cooldown temporal
                     if self.profile_cooldown_minutes > 0 and p.name in self.profile_last_used:
                         last_used = self.profile_last_used[p.name]
                         cooldown_delta = timedelta(minutes=self.profile_cooldown_minutes)
                         if now - last_used < cooldown_delta:
                             continue
-                    
+
                     candidates.append(p)
             
             if not candidates:
@@ -284,11 +288,11 @@ class RotationAutomationRunner:
                 print(f"[{profile.name}] Falló al iniciar driver")
                 return  # El master iniciará otro perfil
             
-            # 2. Verificar Login
-            print(f"[{profile.name}] Esperando login...")
-            if not self._wait_for_login(service):
-                print(f"[{profile.name}] Timeout login")
-                return  # El master iniciará otro perfil
+            # 2. Verificar Login / Detectar QR de bloqueo
+            print(f"[{profile.name}] Verificando sesión...")
+            if not self._wait_for_login(service, profile):
+                print(f"[{profile.name}] Login fallido o QR detectado — worker finalizado")
+                return  # El master iniciará otro perfil (con otro perfil disponible)
             
             print(f"[{profile.name}] Listo para enviar.")
             
@@ -361,9 +365,36 @@ class RotationAutomationRunner:
                 if profile.name in self.profile_services:
                     del self.profile_services[profile.name]
     
-    def _wait_for_login(self, service) -> bool:
-        """Espera hasta 60s por login."""
-        for _ in range(60):
+    def _wait_for_login(self, service, profile) -> bool:
+        """
+        Espera hasta que el usuario inicie sesión.
+        En el contexto de ENVÍO: si detecta QR inmediatamente, marca el perfil
+        como BLOQUEADO y lo excluye de futuras selecciones en esta sesión.
+        """
+        # Dar tiempo a que WhatsApp Web cargue antes de chequear
+        time.sleep(4)
+
+        # --- DETECCIÓN INMEDIATA DE QR (Perfil Bloqueado en contexto de Envío) ---
+        if service.is_qr_visible():
+            print(f"[{profile.name}] ⛔ QR detectado al inicio → marcando BLOQUEADO y descartando.")
+            try:
+                if "BLOQUEADO" not in profile.tags:
+                    profile.tags.append("BLOQUEADO")
+                    profile.save_metadata()
+                    print(f"[{profile.name}] ✅ Etiqueta BLOQUEADO guardada.")
+            except Exception as e:
+                print(f"[{profile.name}] ❌ Error guardando etiqueta BLOQUEADO: {e}")
+
+            # Eliminar este perfil de la lista de disponibles para no repetirlo
+            with self.pool_lock:
+                self.available_profiles = [
+                    p for p in self.available_profiles if p.name != profile.name
+                ]
+                print(f"[Rotación] Perfil '{profile.name}' eliminado del pool disponible (BLOQUEADO).")
+            return False
+
+        # Sin QR: esperar login normal (máx ~56s restantes, sumados a los 4s ya esperados)
+        for _ in range(56):
             if self.stop_event.is_set():
                 return False
             if service.is_logged_in():
