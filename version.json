@@ -1,8 +1,8 @@
 {
-    "version": "1.2.7",
-    "build": "20260317",
-    "release_date": "2026-03-17",
-    "release_notes": "- Detección de perfiles bloqueados por QR al iniciar envío de mensajes\\n- Perfiles bloqueados descartados automáticamente y reemplazados\\n- Gestión exclusiva de QR en sección 'browsers' sin marcar perfil como bloqueado\\n- Detección dual de campos de búsqueda en WhatsApp Web (<p> y <input>)\\n- Mejoras de estabilidad en rotation_runner y automation_runner",
+    "version": "1.2.8",
+    "build": "20260318",
+    "release_date": "2026-03-18",
+    "release_notes": "- Filtro de respuestas automáticas en monitor: detecta y omite auto-respuestas del cliente (hora igual al mensaje enviado Y mensaje ≥ 70 caracteres)\\n- Normalización de hora HH:MM para comparación precisa sin importar formato a.m./p.m.\\n- Filtro de grupos: el monitor solo notifica chats de contactos reales (nombre inicia con '+')\\n- Mejoras de trazabilidad en logs del monitor",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
-}
+}

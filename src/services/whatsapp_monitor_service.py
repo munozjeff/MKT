@@ -420,7 +420,15 @@ Detectado: {chat_info['timestamp']}
                         break
                     
                     print(f"\n[Monitor] Procesando notificación {idx}/{len(chats_nuevos)}...")
-                    
+
+                    # ── Filtro de grupos: solo procesar chats de usuarios reales ──
+                    # Los contactos reales tienen nombre que comienza con '+' (ej: +57 320 4901850)
+                    # Los grupos tienen nombres de texto (ej: ventas_mkt3, Soporte)
+                    nombre_chat = chat.get('nombre', '')
+                    if not nombre_chat.startswith('+'):
+                        print(f"[Monitor] 🚫 Chat de grupo detectado: '{nombre_chat}' → OMITIENDO (solo se procesan contactos +XX)")
+                        continue
+
                     if not self.marcar_chat_como_leido(chat, close_after=False):
                         print(f"[Monitor] ⚠ No se pudo marcar como leído, continuando...")
                         continue
@@ -526,77 +534,139 @@ Detectado: {chat_info['timestamp']}
         print(f"[Monitor] ═══════════════════════════════════════\n")
         return elapsed_time
 
+    def _extraer_hora_fila(self, fila):
+        """
+        Extrae y normaliza la hora (H:MM) de una fila de mensaje del chat.
+        Siempre retorna solo 'H:MM' (sin a.m./p.m. ni texto extra) para
+        que la comparación entre mensajes de salida y entrada sea consistente.
+
+        Returns:
+            str con la hora "H:MM" o "" si no se pudo extraer
+        """
+        import re
+
+        def _normalizar(texto):
+            """Extrae solo la parte H:MM de un string como '2:03 p.m.' o '14:03'."""
+            match = re.search(r'(\d{1,2}:\d{2})', texto)
+            return match.group(1) if match else ""
+
+        try:
+            hora_elem = fila.find_element(By.CSS_SELECTOR, "span[dir='auto'].x1c4vz4f")
+            return _normalizar(hora_elem.text.strip())
+        except:
+            pass
+        # Fallback: parsear data-pre-plain-text → "[HH:MM, DD/MM/YYYY] Nombre: "
+        try:
+            copyable = fila.find_element(By.CSS_SELECTOR, "div.copyable-text")
+            pre_text = copyable.get_attribute("data-pre-plain-text") or ""
+            return _normalizar(pre_text)
+        except:
+            pass
+        return ""
+
+
     def leer_mensajes_chat_abierto(self):
         """
         Lee los mensajes del chat abierto actualmente.
         Recorre de abajo hacia arriba hasta encontrar el último mensaje enviado por nosotros (outgoing).
         Captura todos los mensajes entrantes (incoming) posteriores a ese.
-        
+
+        FILTRO DE RESPUESTAS AUTOMÁTICAS (doble condición):
+        Un mensaje entrante se omite SOLO si cumple AMBAS condiciones:
+          1. Su hora (HH:MM) es igual a la hora del último mensaje de salida
+          2. El texto tiene 70 caracteres o menos
+        Si solo se cumple una condición, el mensaje se incluye (es respuesta real).
+
         LÍMITE: Si no se encuentra mensaje de salida, solo lee los últimos 5 mensajes.
-        
+
         Returns:
             Lista de mensajes (texto) ordenados cronológicamente
         """
         try:
             print("[Monitor] Leyendo mensajes del chat abierto...")
-            # Buscar todos los contenedores de mensajes (filas)
-            # Usamos un selector general para filas de mensajes
             filas = self.driver.find_elements(By.CSS_SELECTOR, "div[role='row']")
-            
+
             mensajes_nuevos = []
-            MAX_MENSAJES_SIN_SALIDA = 5  # Límite si no hay mensaje de salida
-            
-            # Recorrer de abajo hacia arriba (más reciente a más antiguo)
+            MAX_MENSAJES_SIN_SALIDA = 5
+
+            # ── Paso 1: Encontrar la hora del ÚLTIMO mensaje de salida ──────────
+            hora_ultimo_salida = ""
             for fila in reversed(filas):
                 try:
-                    # Verificar si es mensaje de salida (nuestro)
-                    es_salida = fila.find_elements(By.CSS_SELECTOR, "div.message-out")
-                    if es_salida:
-                        # Encontramos el último mensaje que enviamos, paramos aquí
+                    if fila.find_elements(By.CSS_SELECTOR, "div.message-out"):
+                        hora_ultimo_salida = self._extraer_hora_fila(fila)
+                        print(f"[Monitor] 🕐 Hora del último mensaje enviado: '{hora_ultimo_salida}'")
+                        break
+                except:
+                    continue
+
+            # ── Paso 2: Leer mensajes entrantes posteriores al de salida ────────
+            for fila in reversed(filas):
+                try:
+                    # Detenerse al encontrar el último mensaje de salida
+                    if fila.find_elements(By.CSS_SELECTOR, "div.message-out"):
                         print("[Monitor] Encontrado último mensaje enviado por nosotros. Deteniendo lectura.")
                         break
-                    
-                    # Verificar si es mensaje de entrada (del cliente)
-                    es_entrada = fila.find_elements(By.CSS_SELECTOR, "div.message-in")
-                    if es_entrada:
+
+                    if fila.find_elements(By.CSS_SELECTOR, "div.message-in"):
                         # Extraer texto
                         try:
-                            # Intentar buscar el texto copiable
                             texto_elem = fila.find_element(By.CSS_SELECTOR, "span.copyable-text")
                             texto = texto_elem.text
                         except:
-                            # Fallback: intentar buscar cualquier span con texto
                             texto = fila.text
-                        
-                        # Extraer hora (opcional, pero útil)
-                        try:
-                            hora_elem = fila.find_element(By.CSS_SELECTOR, "span[dir='auto'].x1c4vz4f") # Ajustar selector si es necesario
-                            hora = hora_elem.text
-                        except:
-                            hora = ""
-                            
-                        # Limpiar y agregar
+
+                        # Extraer hora del mensaje entrante
+                        hora_entrada = self._extraer_hora_fila(fila)
+
                         if texto:
-                            # Opcional: Limpiar saltos de línea extra
                             texto = texto.strip()
                             if texto:
-                                mensajes_nuevos.append(f"[{hora}] {texto}" if hora else texto)
-                                
-                                # LÍMITE: Si ya tenemos MAX_MENSAJES_SIN_SALIDA mensajes y no hemos encontrado salida, detenemos
-                                if len(mensajes_nuevos) >= MAX_MENSAJES_SIN_SALIDA:
-                                    print(f"[Monitor] Alcanzado límite de {MAX_MENSAJES_SIN_SALIDA} mensajes sin encontrar mensaje de salida. Deteniendo lectura.")
+                                 # ── Filtro de respuesta automática (doble condición) ──
+                                # Auto-respuesta = hora igual AL mensaje de salida
+                                #                  Y mensaje largo (≥ 70 chars)
+                                # Si solo se cumple UNA condición → se notifica (respuesta real)
+                                hora_igual = (hora_ultimo_salida != "" and hora_entrada == hora_ultimo_salida)
+                                mensaje_largo = len(texto) >= 70
+
+                                if hora_igual and mensaje_largo:
+                                    print(
+                                        f"[Monitor] ⚡ Auto-respuesta detectada "
+                                        f"(hora='{hora_entrada}' igual a salida, {len(texto)} chars ≥ 70) "
+                                        f"→ OMITIENDO: '{texto[:50]}...'"
+                                        if len(texto) > 50 else
+                                        f"[Monitor] ⚡ Auto-respuesta detectada "
+                                        f"(hora='{hora_entrada}' igual a salida, {len(texto)} chars ≥ 70) "
+                                        f"→ OMITIENDO: '{texto}'"
+                                    )
+                                    continue  # No agregar a la lista
+
+                                # Log cuando hora es igual pero mensaje corto (respuesta real)
+                                if hora_igual and not mensaje_largo:
+                                    print(
+                                        f"[Monitor] ✅ Hora igual a salida pero mensaje corto "
+                                        f"({len(texto)} chars < 70) → respuesta real, se notifica"
+                                    )
+
+
+                                mensajes_nuevos.append(f"[{hora_entrada}] {texto}" if hora_entrada else texto)
+
+                                if len(mensajes_nuevos) >= MAX_MENSAJES_SIN_SALIDA and not hora_ultimo_salida:
+                                    print(
+                                        f"[Monitor] Alcanzado límite de {MAX_MENSAJES_SIN_SALIDA} mensajes "
+                                        f"sin encontrar mensaje de salida. Deteniendo lectura."
+                                    )
                                     break
-                            
-                except Exception as e:
-                    # Si falla leer una fila, continuamos con la siguiente
+
+                except Exception:
                     continue
-            
-            # Invertir la lista para tener orden cronológico (antiguo -> reciente)
+
+            # Invertir para orden cronológico (antiguo → reciente)
             mensajes_nuevos.reverse()
-            
+
             print(f"[Monitor] Leídos {len(mensajes_nuevos)} mensajes nuevos del cliente.")
             return mensajes_nuevos
-            
+
         except Exception as e:
             print(f"[Monitor] Error al leer mensajes del chat: {e}")
             return []
