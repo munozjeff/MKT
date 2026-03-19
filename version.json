@@ -1,7 +1,7 @@
 {
-    "version": "1.2.8",
-    "build": "20260318",
-    "release_date": "2026-03-18",
+    "version": "1.2.9",
+    "build": "20260319",
+    "release_date": "2026-03-19",
     "release_notes": "- Filtro de respuestas automáticas en monitor: detecta y omite auto-respuestas del cliente (hora igual al mensaje enviado Y mensaje ≥ 70 caracteres)\\n- Normalización de hora HH:MM para comparación precisa sin importar formato a.m./p.m.\\n- Filtro de grupos: el monitor solo notifica chats de contactos reales (nombre inicia con '+')\\n- Mejoras de trazabilidad en logs del monitor",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"

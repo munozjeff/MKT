@@ -436,9 +436,19 @@ Detectado: {chat_info['timestamp']}
                     # PASO 1.5: Contar mensajes de salida para determinar acción
                     num_salidas = self.contar_mensajes_salida()
                     
-                    # PASO 1.6: Leer los mensajes completos
+                    # PASO 1.6: Leer los mensajes completos (con filtro de auto-respuestas)
                     mensajes = self.leer_mensajes_chat_abierto()
-                    
+
+                    # ── Si la lista quedó vacía, todos los mensajes eran auto-respuestas ──
+                    # En ese caso cerrar chat y NO notificar
+                    if not mensajes:
+                        print(f"[Monitor] 🔕 '{nombre_chat}' — solo auto-respuestas detectadas → no notificar")
+                        try:
+                            self.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+                        except: pass
+                        time.sleep(0.5)
+                        continue
+
                     # ═══════════════════════════════════════════════════════════════
                     # LÓGICA MEJORADA DE AUTO-RESPUESTA Y NOTIFICACIÓN
                     # Basada en el conteo de mensajes de salida en el historial:
