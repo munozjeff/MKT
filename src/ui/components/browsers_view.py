@@ -259,6 +259,29 @@ class BrowsersView(ttk.Frame):
             
         ttk.Button(dialog, text="Guardar", command=save).pack(pady=20)
         
+    def _check_whatsapp_logged_in(self, service) -> bool:
+        """Verifica si WhatsApp está disponible buscando el botón Nuevo chat.
+        
+        Intenta primero con CSS selector y luego con XPath como fallback.
+        """
+        try:
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.common.by import By
+            short_wait = WebDriverWait(service.driver, 3)
+            try:
+                short_wait.until(EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, "[title='Nuevo chat'], [aria-label='Nuevo chat']")
+                ))
+                return True
+            except:
+                service.driver.find_element(
+                    By.XPATH, "//span[@data-icon='new-chat-outline']/ancestor::button[1]"
+                )
+                return True
+        except:
+            return False
+
     def _run_browser_manual(self, profile_name):
         """Ejecuta el navegador manualmente y maneja el bloqueo."""
         if not self.browser_service.lock_profile(profile_name):
@@ -273,6 +296,10 @@ class BrowsersView(ttk.Frame):
             
             if not profile:
                 return
+
+            # Verificar si el perfil estaba bloqueado al iniciarse
+            was_blocked = "BLOQUEADO" in profile.tags
+            unblocked_done = False
                 
             service = WhatsAppService()
             if service.initialize_driver(profile.path):
@@ -286,6 +313,20 @@ class BrowsersView(ttk.Frame):
                         service.driver.title
                     except:
                         break
+
+                    # Solo intentar desbloquear si el perfil era BLOQUEADO y no se ha desbloqueado aún
+                    if was_blocked and not unblocked_done:
+                        try:
+                            session_ok = service.is_session_active()
+                            if session_ok and self._check_whatsapp_logged_in(service):
+                                # Sesión activa y botón "Nuevo chat" visible → WhatsApp listo
+                                profile.remove_tag("BLOQUEADO")
+                                unblocked_done = True
+                                print(f"[Navegadores] Perfil '{profile_name}' desbloqueado exitosamente.")
+                                # Refrescar lista en hilo UI
+                                self.after(0, self.load_profiles)
+                        except Exception as e:
+                            print(f"Error verificando desbloqueo de perfil: {e}")
             
         except Exception as e:
             print(f"Error abriendo navegador: {e}")
