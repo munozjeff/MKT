@@ -98,14 +98,16 @@ class DistributedAutomationRunner:
             print(f"[{profile.name}] Listo para enviar.")
             
             # Inicializar monitor si está configurado
-            monitor_phone = self.config.get("monitor_phone", "")
-            if monitor_phone:
+            monitor_group = self.config.get("monitor_group", "")
+            monitor_backup = self.config.get("monitor_backup", "")
+            if monitor_group or monitor_backup:
                 monitor_service = WhatsAppMonitorService(
                     driver=service.driver,
-                    notification_contact=monitor_phone,
+                    notification_group=monitor_group or None,
+                    notification_backup=monitor_backup or None,
                     profile_name=profile.name
                 )
-                print(f"[{profile.name}] 📱 Monitor activado - Notificaciones a: {monitor_phone}")
+                print(f"[{profile.name}] 📱 Monitor activado — 🥇 Grupo: '{monitor_group or '—'}' | 🥈 Respaldo: '{monitor_backup or '—'}'")
             
             # 3. Procesar cola
             while not self.phone_queue.empty() and not self.stop_event.is_set():

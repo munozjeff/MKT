@@ -72,10 +72,19 @@ class MonitorView(ttk.Frame):
         frame_notif = ttk.LabelFrame(config_frame, text="Notificaciones", padding=5)
         frame_notif.pack(fill=tk.X, pady=3)
         
-        ttk.Label(frame_notif, text="Número/Grupo para Notificaciones:").pack(anchor=tk.W)
-        self.ent_notification_phone = ttk.Entry(frame_notif, width=30)
-        self.ent_notification_phone.pack(fill=tk.X, pady=2)
-        ttk.Label(frame_notif, text="(Ej: +573001234567 o ID de grupo)", font=("Arial", 7), foreground="gray").pack(anchor=tk.W)
+        # Campo 1: Grupo (Prioridad)
+        ttk.Label(frame_notif, text="🥇 Grupo para Notificaciones (prioridad):", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+        self.ent_notification_group = ttk.Entry(frame_notif, width=35)
+        self.ent_notification_group.pack(fill=tk.X, pady=2)
+        ttk.Label(frame_notif, text="  Nombre exacto del grupo de WhatsApp donde se enviarán las alertas",
+                  font=("Arial", 7), foreground="gray").pack(anchor=tk.W)
+        
+        # Campo 2: Celular Respaldo
+        ttk.Label(frame_notif, text="🥈 Contacto para notificación (respaldo):", font=("Arial", 9, "bold")).pack(anchor=tk.W, pady=(5, 0))
+        self.ent_notification_backup = ttk.Entry(frame_notif, width=35)
+        self.ent_notification_backup.pack(fill=tk.X, pady=2)
+        ttk.Label(frame_notif, text="  Ej: +573001234567  (se usa si el grupo falla o no se encuentra)",
+                  font=("Arial", 7), foreground="gray").pack(anchor=tk.W)
         
         # 4. Configuración de auto-respuesta (REDUCIDO)
         frame_autoreply = ttk.LabelFrame(config_frame, text="Auto-Respuesta", padding=5)
@@ -205,10 +214,16 @@ class MonitorView(ttk.Frame):
             messagebox.showerror("Error", "Seleccione al menos un perfil para monitorear")
             return
         
-        # 2. Validar número de notificación
-        notification_phone = self.ent_notification_phone.get().strip()
-        if not notification_phone:
-            messagebox.showerror("Error", "Ingrese un número/grupo para notificaciones")
+        # 2. Validar campos de notificación (ambos son obligatorios)
+        notification_group = self.ent_notification_group.get().strip()
+        notification_backup = self.ent_notification_backup.get().strip()
+        
+        if not notification_group:
+            messagebox.showerror("Error", "Ingrese el nombre del grupo de WhatsApp para notificaciones (prioridad)")
+            return
+        
+        if not notification_backup:
+            messagebox.showerror("Error", "Ingrese el número celular de respaldo para notificaciones")
             return
         
         # 3. Obtener configuración
@@ -263,7 +278,8 @@ class MonitorView(ttk.Frame):
             "simultaneous": simultaneous,
             "interval": interval,
             "auto_reply_text": auto_reply_text,
-            "monitor_contact": notification_phone
+            "monitor_group": notification_group,
+            "monitor_backup": notification_backup
         }
         
         # 8. Crear UI card de tarea

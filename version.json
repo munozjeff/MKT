@@ -1,8 +1,8 @@
 {
-    "version": "1.3.0",
-    "build": "20260325",
-    "release_date": "2026-03-25",
-    "release_notes": "- Auto-desbloqueo de perfiles: si un perfil BLOQUEADO escanea WhatsApp exitosamente en la pestaña Navegadores, la etiqueta BLOQUEADO se elimina automáticamente\\n- Detección de sesión activa mediante botón Nuevo chat (CSS + XPath fallback)\\n- Filtro de respuestas automáticas en monitor: detecta y omite auto-respuestas del cliente (hora igual al mensaje enviado Y mensaje ≥ 70 caracteres)\\n- Normalización de hora HH:MM para comparación precisa sin importar formato a.m./p.m.\\n- Filtro de grupos: el monitor solo notifica chats de contactos reales (nombre inicia con '+')",
+    "version": "1.4.0",
+    "build": "20260331",
+    "release_date": "2026-03-31",
+    "release_notes": "- Notificaciones con respaldo dual: se configura un grupo de WhatsApp (prioridad) y un número celular de respaldo\\n- El monitor intenta primero enviar la notificación al grupo; si falla por cualquier razón (grupo no encontrado, error de red, etc.), automáticamente intenta con el número celular de respaldo\\n- Ambos campos son obligatorios en la configuración del monitor y en la opción Activar Monitor del envío\\n- Los logs del monitor indican claramente cuál destino se usó (🥇 Grupo / 🥈 Respaldo) y si hubo reintento\\n- Compatibilidad backward: configuraciones anteriores con un solo destino siguen funcionando",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
-}
+}

@@ -177,12 +177,19 @@ class SendView(ttk.Frame):
             variable=self.var_monitor_enabled,
             command=self.on_monitor_toggle
         )
-        self.chk_monitor.grid(row=0, column=0, **grid_opts)
+        self.chk_monitor.grid(row=0, column=0, columnspan=3, **grid_opts)
         
-        ttk.Label(right_col, text="Número/Grupo Notif.:").grid(row=1, column=0, **grid_opts)
-        self.ent_monitor_phone = ttk.Entry(right_col, width=20, state="disabled")
-        self.ent_monitor_phone.grid(row=1, column=1, **grid_opts)
-        ttk.Label(right_col, text="(Ej: +573001234567 o nombre)", font=("Arial", 8)).grid(row=1, column=2, padx=2, sticky=tk.W)
+        # Campo de Grupo (Prioridad)
+        ttk.Label(right_col, text="🥇 Grupo Notif. (prioridad):").grid(row=1, column=0, **grid_opts)
+        self.ent_monitor_group = ttk.Entry(right_col, width=22, state="disabled")
+        self.ent_monitor_group.grid(row=1, column=1, **grid_opts)
+        ttk.Label(right_col, text="(nombre exacto del grupo)", font=("Arial", 8)).grid(row=1, column=2, padx=2, sticky=tk.W)
+        
+        # Campo de Celular Respaldo
+        ttk.Label(right_col, text="🥈 Celular Respaldo:").grid(row=2, column=0, **grid_opts)
+        self.ent_monitor_backup = ttk.Entry(right_col, width=22, state="disabled")
+        self.ent_monitor_backup.grid(row=2, column=1, **grid_opts)
+        ttk.Label(right_col, text="(Ej: +573001234567)", font=("Arial", 8)).grid(row=2, column=2, padx=2, sticky=tk.W)
         
         # 6. Auto-Respuesta (solo si Monitor activo)
         self.var_autoreply_enabled = tk.BooleanVar(value=False)
@@ -193,10 +200,10 @@ class SendView(ttk.Frame):
             command=self.on_autoreply_toggle,
             state="disabled"
         )
-        self.chk_autoreply.grid(row=2, column=0, **grid_opts)
+        self.chk_autoreply.grid(row=3, column=0, **grid_opts)
         
         self.ent_autoreply_text = ttk.Entry(right_col, width=30, state="disabled")
-        self.ent_autoreply_text.grid(row=2, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.ent_autoreply_text.grid(row=3, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
         
         # Frame para configuración de Rotación (inicialmente oculto)
         self.frame_rotation_config = ttk.Frame(right_col)
@@ -342,10 +349,12 @@ class SendView(ttk.Frame):
             pass
     
     def on_monitor_toggle(self):
-        """Enable/disable monitor input and auto-reply checkbox."""
+        """Enable/disable monitor inputs and auto-reply checkbox."""
         enabled = self.var_monitor_enabled.get()
-        self.ent_monitor_phone.config(state="normal" if enabled else "disabled")
-        self.chk_autoreply.config(state="normal" if enabled else "disabled")
+        state = "normal" if enabled else "disabled"
+        self.ent_monitor_group.config(state=state)
+        self.ent_monitor_backup.config(state=state)
+        self.chk_autoreply.config(state=state)
         
         # Clear and disable auto-reply if monitor is disabled
         if not enabled:
@@ -477,13 +486,20 @@ class SendView(ttk.Frame):
         }
         
         # Monitor Configuration
-        monitor_contact = None
+        monitor_group = None
+        monitor_backup = None
         auto_reply_text = None
         
         if self.var_monitor_enabled.get():
-            monitor_contact = self.ent_monitor_phone.get().strip()
-            if not monitor_contact:
-                messagebox.showwarning("Advertencia", "Monitor activado pero sin número de notificación configurado.")
+            monitor_group = self.ent_monitor_group.get().strip()
+            monitor_backup = self.ent_monitor_backup.get().strip()
+            
+            if not monitor_group:
+                messagebox.showwarning("Advertencia", "Monitor activado pero sin nombre de grupo para notificaciones.")
+                return
+            
+            if not monitor_backup:
+                messagebox.showwarning("Advertencia", "Monitor activado pero sin número celular de respaldo.")
                 return
             
             if self.var_autoreply_enabled.get():
@@ -492,7 +508,8 @@ class SendView(ttk.Frame):
                     messagebox.showwarning("Advertencia", "Auto-respuesta activada pero sin mensaje configurado.")
                     return
         
-        config["monitor_phone"] = monitor_contact
+        config["monitor_group"] = monitor_group
+        config["monitor_backup"] = monitor_backup
         config["auto_reply_text"] = auto_reply_text
         
         if not config["message_type"]:

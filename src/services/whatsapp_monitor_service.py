@@ -14,17 +14,24 @@ from datetime import datetime
 class WhatsAppMonitorService:
     """Servicio para monitorear mensajes nuevos en WhatsApp y enviar notificaciones."""
     
-    def __init__(self, driver, notification_contact=None, profile_name="Desconocido"):
+    def __init__(self, driver, notification_group=None, notification_backup=None,
+                 notification_contact=None, profile_name="Desconocido"):
         """
         Inicializa el servicio de monitoreo.
         
         Args:
             driver: Instancia de Selenium WebDriver ya inicializada
-            notification_contact: Número o nombre de contacto/grupo para enviar notificaciones
+            notification_group: Nombre del grupo de WhatsApp (PRIORIDAD principal)
+            notification_backup: Número celular de respaldo (si el grupo falla)
+            notification_contact: DEPRECATED - equivale a notification_group para compatibilidad
             profile_name: Nombre del perfil de navegador que se está usando
         """
         self.driver = driver
-        self.notification_contact = notification_contact
+        # Prioridad: notification_group. Si no se pasa, usar notification_contact (backward compat)
+        self.notification_group = notification_group or notification_contact
+        self.notification_backup = notification_backup
+        # Alias para compatibilidad con código antiguo
+        self.notification_contact = self.notification_group
         self.profile_name = profile_name
         self.wait = WebDriverWait(self.driver, 10)
         # Cambio: Usar diccionario para guardar estados y detectar cambios 'reales'
@@ -258,119 +265,156 @@ class WhatsAppMonitorService:
         
         return mensaje_limpio.strip()
     
+    def _enviar_a_contacto(self, contacto, mensaje_limpio, whatsapp_service):
+        """
+        Intenta enviar un mensaje a un contacto o grupo específico.
+        Método auxiliar reutilizable para grupo y respaldo.
+        
+        Args:
+            contacto: Número o nombre del grupo/contacto destino
+            mensaje_limpio: Texto ya limpio listo para enviar
+            whatsapp_service: Instancia de WhatsAppService
+            
+        Returns:
+            True si el envío fue exitoso, False en caso contrario
+        """
+        import re
+        try:
+            # PASO 1: Click en "Nuevo chat"
+            print(f"[Monitor] Paso 1/5: Abriendo 'Nuevo chat' para → {contacto}...")
+            whatsapp_service.click_new_chat()
+            print("[Monitor] ✓ 'Nuevo chat' abierto")
+
+            # PASO 2: Buscar el contacto
+            print(f"[Monitor] Paso 2/5: Buscando contacto '{contacto}'...")
+            if not whatsapp_service.search_contact(contacto):
+                print(f"[Monitor] ✗ Error al buscar '{contacto}'")
+                try:
+                    whatsapp_service.go_back()
+                except:
+                    pass
+                return False
+            print("[Monitor] ✓ Contacto buscado")
+
+            # PASO 3: Verificar existencia (solo para números)
+            is_group_or_name = bool(re.search('[a-zA-Z]', contacto))
+            if is_group_or_name:
+                print(f"[Monitor] Detectado nombre/grupo → saltando validación numérica")
+                time.sleep(1)
+            else:
+                print("[Monitor] Paso 3/5: Verificando existencia del contacto (número)...")
+                found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
+                if not found or not has_whatsapp:
+                    print(f"[Monitor] ✗ Contacto no encontrado o sin WhatsApp: {error_msg}")
+                    try:
+                        whatsapp_service.go_back()
+                    except:
+                        pass
+                    return False
+                print("[Monitor] ✓ Contacto verificado")
+
+            # PASO 4: Abrir el chat
+            print("[Monitor] Paso 4/5: Abriendo chat...")
+            if not whatsapp_service.open_chat():
+                print("[Monitor] ✗ Error al abrir el chat")
+                try:
+                    whatsapp_service.go_back()
+                except:
+                    pass
+                return False
+            print("[Monitor] ✓ Chat abierto")
+
+            # PASO 5: Enviar el mensaje
+            print("[Monitor] Paso 5/5: Enviando mensaje...")
+            if not whatsapp_service.send_text_message(mensaje_limpio):
+                print("[Monitor] ✗ Error al escribir el mensaje")
+                return False
+            if not whatsapp_service.send_message_simple():
+                print("[Monitor] ✗ Error al enviar el mensaje")
+                return False
+
+            print(f"[Monitor] ✓ Notificación enviada correctamente a '{contacto}'")
+            time.sleep(2)
+            whatsapp_service.close_chat()
+            time.sleep(2)
+            return True
+
+        except Exception as e:
+            print(f"[Monitor] ❌ Error enviando a '{contacto}': {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                whatsapp_service.go_back()
+            except:
+                pass
+            return False
+
     def enviar_notificacion(self, chat_info, whatsapp_service, mensajes_completos=None):
         """
-        Envía una notificación al contacto predefinido usando whatsapp_service.
+        Envía una notificación usando PRIORIDAD DE GRUPO con RESPALDO a número celular.
+        
+        Orden de intento:
+          1. notification_group (nombre del grupo) — prioridad
+          2. notification_backup (número celular)  — solo si el grupo falla
         
         Args:
             chat_info: Diccionario con información del chat
             whatsapp_service: Instancia de WhatsAppService para enviar el mensaje
             mensajes_completos: Lista de mensajes leídos (opcional)
+            
+        Returns:
+            True si alguno de los dos intentos tuvo éxito, False si ambos fallaron
         """
-        if not self.notification_contact:
-            print("[Monitor] No hay número de notificación configurado")
+        if not self.notification_group and not self.notification_backup:
+            print("[Monitor] ⚠️ No hay destino de notificación configurado (ni grupo ni respaldo)")
             return False
-        
-        try:
-            # Usar el contacto tal como está (puede ser número o nombre de grupo)
-            contacto_notif = self.notification_contact
-            
-            # Formatear el mensaje de notificación
-            contenido_mensajes = ""
-            if mensajes_completos:
-                contenido_mensajes = "\n".join(mensajes_completos)
-            else:
-                contenido_mensajes = f"Preview: {chat_info['preview']}"
-            
-            mensaje = f"""Perfil: {self.profile_name}
+
+        # Construir el mensaje de notificación
+        contenido_mensajes = ""
+        if mensajes_completos:
+            contenido_mensajes = "\n".join(mensajes_completos)
+        else:
+            contenido_mensajes = f"Preview: {chat_info['preview']}"
+
+        mensaje = f"""Perfil: {self.profile_name}
 Nombre: {chat_info['nombre']}
 Hora: {chat_info['hora']}
 Detectado: {chat_info['timestamp']}
 
 --- MENSAJES ---
 {contenido_mensajes}"""
-            
-            # Limpiar caracteres especiales del mensaje
-            mensaje_limpio = self.limpiar_mensaje(mensaje)
-            
-            print(f"\\n[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
-            print(f"[Monitor] Contacto destino: {contacto_notif}")
-            
-            # PASO 1: Click en "Nuevo chat"
-            print("[Monitor] Paso 1/5: Abriendo 'Nuevo chat'...")
-            # La función click_new_chat no retorna valor (void), así que no verificamos resultado
-            whatsapp_service.click_new_chat()
-            print("[Monitor] ✓ 'Nuevo chat' abierto (asumiendo éxito)")
-            
-            # PASO 2: Buscar el contacto
-            print(f"[Monitor] Paso 2/5: Buscando contacto {contacto_notif}...")
-            if not whatsapp_service.search_contact(contacto_notif):
-                print("[Monitor] ✗ Error al buscar contacto")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Contacto buscado")
-            
-            # PASO 3: Verificar que el contacto existe
-            # Si tiene letras, asumimos que es un GRUPO o contacto guardado -> saltar validación estricta
-            import re
-            is_group_or_name = bool(re.search('[a-zA-Z]', contacto_notif))
-            
-            if is_group_or_name:
-                print(f"[Monitor] Detectado nombre/grupo '{contacto_notif}', saltando validación numérica...")
-                # Pequeña espera para que aparezca en la lista
-                time.sleep(1)
+
+        mensaje_limpio = self.limpiar_mensaje(mensaje)
+
+        print(f"\n[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
+
+        # ── INTENTO 1: Grupo (prioridad) ──────────────────────────────────────
+        if self.notification_group:
+            print(f"[Monitor] 🥇 Intento 1/2 → GRUPO: '{self.notification_group}'")
+            exito = self._enviar_a_contacto(self.notification_group, mensaje_limpio, whatsapp_service)
+            if exito:
+                print(f"[Monitor] ✅ Notificación enviada al grupo '{self.notification_group}'")
+                return True
             else:
-                print("[Monitor] Paso 3/5: Verificando existencia del contacto (número)...")
-                found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
-                
-                if not found or not has_whatsapp:
-                    print(f"[Monitor] ✗ El contacto no fue encontrado o no tiene WhatsApp: {error_msg}")
-                    whatsapp_service.go_back()
+                print(f"[Monitor] ⚠️ Falló envío al grupo '{self.notification_group}'")
+                if self.notification_backup:
+                    print(f"[Monitor] 🔄 Activando respaldo → número celular: '{self.notification_backup}'")
+                else:
+                    print("[Monitor] ❌ No hay número de respaldo configurado. Notificación perdida.")
                     return False
-                print("[Monitor] ✓ Contacto verificado")
-            
-            # PASO 4: Abrir el chat
-            print("[Monitor] Paso 4/5: Abriendo chat...")
-            if not whatsapp_service.open_chat():
-                print("[Monitor] ✗ Error al abrir el chat")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Chat abierto")
-            
-            # PASO 5: Enviar el mensaje
-            print("[Monitor] Paso 5/5: Enviando mensaje...")
-            if not whatsapp_service.send_text_message(mensaje_limpio):
-                print("[Monitor] ✗ Error al enviar mensaje de texto")
-                return False
-            
-            # Enviar el mensaje (presionar Enter)
-            if not whatsapp_service.send_message_simple():
-                print("[Monitor] ✗ Error al enviar mensaje")
-                return False
-            
-            print("[Monitor] ✓ Notificación enviada correctamente")
-            
-            # Esperar confirmación de envío
-            time.sleep(2)
-            
-            # Cerrar el chat y volver a la lista
-            whatsapp_service.close_chat()
-            
-            # Pausa adicional para asegurar que WhatsApp esté listo
-            time.sleep(2)
-            
-            return True
-            
-        except Exception as e:
-            print(f"[Monitor] ❌ Error al enviar notificación: {e}")
-            import traceback
-            traceback.print_exc()
-            # Intentar volver a la lista principal
-            try:
-                whatsapp_service.go_back()
-            except:
-                pass
-            return False
+
+        # ── INTENTO 2: Número celular (respaldo) ──────────────────────────────
+        if self.notification_backup:
+            print(f"[Monitor] 🥈 Intento 2/2 → RESPALDO: '{self.notification_backup}'")
+            exito = self._enviar_a_contacto(self.notification_backup, mensaje_limpio, whatsapp_service)
+            if exito:
+                print(f"[Monitor] ✅ Notificación enviada al número de respaldo '{self.notification_backup}'")
+                return True
+            else:
+                print(f"[Monitor] ❌ Falló también el número de respaldo '{self.notification_backup}'")
+
+        print("[Monitor] ❌ Todos los intentos de notificación fallaron.")
+        return False
     
     def monitorear_y_notificar(self, whatsapp_service, max_time=5, auto_reply_text=None):
         """
@@ -385,13 +429,14 @@ Detectado: {chat_info['timestamp']}
         Returns:
             Tiempo usado en el monitoreo (en segundos)
         """
-        if not self.notification_contact:
-            print("[Monitor] Monitor deshabilitado (sin número de notificación)")
+        if not self.notification_group and not self.notification_backup:
+            print("[Monitor] Monitor deshabilitado (sin grupo ni número de notificación)")
             return 0  # Monitor deshabilitado
         
         print(f"\n[Monitor] ═══════════════════════════════════════")
         print(f"[Monitor] Iniciando monitoreo de mensajes nuevos")
-        print(f"[Monitor] Número de notificaciones: {self.notification_contact}")
+        print(f"[Monitor] 🥇 Grupo (prioridad): {self.notification_group or '❌ No configurado'}")
+        print(f"[Monitor] 🥈 Respaldo (celular): {self.notification_backup or '❌ No configurado'}")
         if auto_reply_text:
             print(f"[Monitor] 🤖 MODO AUTO-RESPUESTA ACTIVO")
             print(f"[Monitor] Mensaje: '{auto_reply_text}'")

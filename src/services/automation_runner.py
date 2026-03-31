@@ -101,14 +101,16 @@ class AutomationRunner:
                 return
                 
             # Inicializar el monitor de mensajes si está configurado
-            monitor_phone = self.config.get("monitor_phone", "")
-            if monitor_phone:
+            monitor_group = self.config.get("monitor_group", "")
+            monitor_backup = self.config.get("monitor_backup", "")
+            if monitor_group or monitor_backup:
                 self.monitor_service = WhatsAppMonitorService(
                     driver=self.whatsapp_service.driver,
-                    notification_contact=monitor_phone,
+                    notification_group=monitor_group or None,
+                    notification_backup=monitor_backup or None,
                     profile_name=self.profile.name
                 )
-                print(f"📱 Monitor de mensajes activado - Notificaciones a: {monitor_phone}")
+                print(f"📱 Monitor activado — 🥇 Grupo: '{monitor_group or '—'}' | 🥈 Respaldo: '{monitor_backup or '—'}'")
             else:
                 print("📱 Monitor de mensajes desactivado")
                 
