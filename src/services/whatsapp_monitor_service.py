@@ -268,64 +268,115 @@ class WhatsAppMonitorService:
     def _enviar_a_contacto(self, contacto, mensaje_limpio, whatsapp_service):
         """
         Intenta enviar un mensaje a un contacto o grupo específico.
-        Método auxiliar reutilizable para grupo y respaldo.
-        
-        Args:
-            contacto: Número o nombre del grupo/contacto destino
-            mensaje_limpio: Texto ya limpio listo para enviar
-            whatsapp_service: Instancia de WhatsAppService
-            
+
+        Flujo:
+        ── VÍA RÁPIDA (sin Nuevo Chat): ─────────────────────────────────────
+          1. Busca el <input> de la barra lateral y escribe el nombre del grupo.
+          2. Presiona ENTER.
+          3. Espera hasta 5 s a que aparezca el campo de mensaje del chat.
+          4. Si aparece → chat abierto, salta al envío.
+          5. Si NO aparece → activa el flujo normal.
+
+        ── FLUJO NORMAL (con Nuevo Chat): ───────────────────────────────────
+          1. click_new_chat()
+          2. search_contact()
+          3. check_contact_exists() solo para números
+          4. open_chat()
+          → envío final
+
         Returns:
-            True si el envío fue exitoso, False en caso contrario
+            True si el envío fue exitoso, False en caso contrario.
         """
         import re
         try:
-            # PASO 1: Click en "Nuevo chat"
-            print(f"[Monitor] Paso 1/5: Abriendo 'Nuevo chat' para → {contacto}...")
-            whatsapp_service.click_new_chat()
-            print("[Monitor] ✓ 'Nuevo chat' abierto")
+            chat_abierto = False
 
-            # PASO 2: Buscar el contacto
-            print(f"[Monitor] Paso 2/5: Buscando contacto '{contacto}'...")
-            if not whatsapp_service.search_contact(contacto):
-                print(f"[Monitor] ✗ Error al buscar '{contacto}'")
+            # ── VÍA RÁPIDA ────────────────────────────────────────────────────
+            print(f"[Monitor] ⚡ Vía rápida (sin 'Nuevo Chat') → '{contacto}'")
+            try:
+                fast_wait = WebDriverWait(self.driver, 5)
+
+                # Detectar el campo de búsqueda de la barra lateral
+                search_input = fast_wait.until(
+                    EC.presence_of_element_located((
+                        By.XPATH,
+                        '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
+                        ' | //input[@data-tab="3" and contains(@class,"html-input")]'
+                    ))
+                )
+
+                # Limpiar y escribir el nombre del grupo
+                search_input.send_keys(Keys.CONTROL + "a")
+                search_input.send_keys(Keys.DELETE)
+                search_input.send_keys(contacto)
+                time.sleep(0.8)  # Dar tiempo a que aparezcan los resultados
+
+                # Presionar ENTER para abrir el primer resultado
+                search_input.send_keys(Keys.ENTER)
+
+                # Verificar si el chat se abrió (aparece el footer con el campo de mensaje)
                 try:
-                    whatsapp_service.go_back()
-                except:
-                    pass
-                return False
-            print("[Monitor] ✓ Contacto buscado")
+                    msg_wait = WebDriverWait(self.driver, 5)
+                    msg_wait.until(
+                        EC.presence_of_element_located((
+                            By.CSS_SELECTOR, "div._ak1q, div._ak1r"
+                        ))
+                    )
+                    print("[Monitor] ✓ Vía rápida exitosa — chat abierto")
+                    chat_abierto = True
+                except Exception:
+                    print("[Monitor] ⚠ Chat no se abrió en 5s → activando flujo normal")
+                    chat_abierto = False
 
-            # PASO 3: Verificar existencia (solo para números)
-            is_group_or_name = bool(re.search('[a-zA-Z]', contacto))
-            if is_group_or_name:
-                print(f"[Monitor] Detectado nombre/grupo → saltando validación numérica")
-                time.sleep(1)
-            else:
-                print("[Monitor] Paso 3/5: Verificando existencia del contacto (número)...")
-                found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
-                if not found or not has_whatsapp:
-                    print(f"[Monitor] ✗ Contacto no encontrado o sin WhatsApp: {error_msg}")
+            except Exception as e:
+                print(f"[Monitor] ⚠ Vía rápida no disponible ({e}) → flujo normal")
+                chat_abierto = False
+
+            # ── FLUJO NORMAL (solo si la vía rápida no abrió el chat) ─────────
+            if not chat_abierto:
+                print(f"[Monitor] Paso 1/4: Abriendo 'Nuevo chat' para → '{contacto}'...")
+                whatsapp_service.click_new_chat()
+                print("[Monitor] ✓ 'Nuevo chat' abierto")
+
+                print(f"[Monitor] Paso 2/4: Buscando contacto '{contacto}'...")
+                if not whatsapp_service.search_contact(contacto):
+                    print(f"[Monitor] ✗ Error al buscar '{contacto}'")
                     try:
                         whatsapp_service.go_back()
                     except:
                         pass
                     return False
-                print("[Monitor] ✓ Contacto verificado")
+                print("[Monitor] ✓ Contacto buscado")
 
-            # PASO 4: Abrir el chat
-            print("[Monitor] Paso 4/5: Abriendo chat...")
-            if not whatsapp_service.open_chat():
-                print("[Monitor] ✗ Error al abrir el chat")
-                try:
-                    whatsapp_service.go_back()
-                except:
-                    pass
-                return False
-            print("[Monitor] ✓ Chat abierto")
+                # Verificación de existencia solo para números (no grupos/nombres)
+                is_group_or_name = bool(re.search('[a-zA-Z]', contacto))
+                if is_group_or_name:
+                    print("[Monitor] Detectado nombre/grupo → saltando validación numérica")
+                    time.sleep(1)
+                else:
+                    print("[Monitor] Paso 3/4: Verificando existencia del contacto (número)...")
+                    found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
+                    if not found or not has_whatsapp:
+                        print(f"[Monitor] ✗ Contacto no encontrado o sin WhatsApp: {error_msg}")
+                        try:
+                            whatsapp_service.go_back()
+                        except:
+                            pass
+                        return False
+                    print("[Monitor] ✓ Contacto verificado")
 
-            # PASO 5: Enviar el mensaje
-            print("[Monitor] Paso 5/5: Enviando mensaje...")
+                print("[Monitor] Paso 4/4: Abriendo chat...")
+                if not whatsapp_service.open_chat():
+                    print("[Monitor] ✗ Error al abrir el chat")
+                    try:
+                        whatsapp_service.go_back()
+                    except:
+                        pass
+                    return False
+                print("[Monitor] ✓ Chat abierto")
+
+            # ── PASO FINAL: Enviar el mensaje (común a ambas vías) ────────────
+            print("[Monitor] Enviando mensaje...")
             if not whatsapp_service.send_text_message(mensaje_limpio):
                 print("[Monitor] ✗ Error al escribir el mensaje")
                 return False

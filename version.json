@@ -1,8 +1,8 @@
 {
-    "version": "1.4.0",
-    "build": "20260331",
-    "release_date": "2026-03-31",
-    "release_notes": "- Notificaciones con respaldo dual: se configura un grupo de WhatsApp (prioridad) y un número celular de respaldo\\n- El monitor intenta primero enviar la notificación al grupo; si falla por cualquier razón (grupo no encontrado, error de red, etc.), automáticamente intenta con el número celular de respaldo\\n- Ambos campos son obligatorios en la configuración del monitor y en la opción Activar Monitor del envío\\n- Los logs del monitor indican claramente cuál destino se usó (🥇 Grupo / 🥈 Respaldo) y si hubo reintento\\n- Compatibilidad backward: configuraciones anteriores con un solo destino siguen funcionando",
+    "version": "1.4.1",
+    "build": "20260401",
+    "release_date": "2026-04-01",
+    "release_notes": "- Detección dual de campos de búsqueda WhatsApp Web (<p> editable e <input> barra lateral) en search_contact y open_chat\\n- Selector de campo estable basado en data-tab=3 y html-input (no se rompe cuando aria-label cambia al escribir)\\n- check_contact_exists más robusto con normalize-space(.) para detectar 'Usuarios que no están en tus contactos'\\n- Notificaciones: nueva vía rápida sin click Nuevo Chat — busca directamente en barra lateral y verifica apertura en 5s\\n- Si la vía rápida falla, activa automáticamente el flujo normal como respaldo",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
