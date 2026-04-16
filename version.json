@@ -1,8 +1,8 @@
 {
-    "version": "1.4.1",
-    "build": "20260401",
-    "release_date": "2026-04-01",
-    "release_notes": "- Detección dual de campos de búsqueda WhatsApp Web (<p> editable e <input> barra lateral) en search_contact y open_chat\\n- Selector de campo estable basado en data-tab=3 y html-input (no se rompe cuando aria-label cambia al escribir)\\n- check_contact_exists más robusto con normalize-space(.) para detectar 'Usuarios que no están en tus contactos'\\n- Notificaciones: nueva vía rápida sin click Nuevo Chat — busca directamente en barra lateral y verifica apertura en 5s\\n- Si la vía rápida falla, activa automáticamente el flujo normal como respaldo",
+    "version": "1.4.2",
+    "build": "20260416",
+    "release_date": "2026-04-16",
+    "release_notes": "- Nueva función: Exportar nombres de perfiles con etiqueta BLOQUEADO",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
