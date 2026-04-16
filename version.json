@@ -1,8 +1,8 @@
 {
-    "version": "1.4.2",
+    "version": "1.4.3",
     "build": "20260416",
     "release_date": "2026-04-16",
-    "release_notes": "- Nueva función: Exportar nombres de perfiles con etiqueta BLOQUEADO",
+    "release_notes": "- Nueva función: Estadísticas de perfiles por etiqueta\n- Nueva función: Exportar nombres de perfiles con etiqueta BLOQUEADO",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

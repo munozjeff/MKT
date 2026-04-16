@@ -93,6 +93,13 @@ class BrowsersView(ttk.Frame):
         
         btn_export = ttk.Button(action_frame, text="Exportar Bloqueados", command=self.export_blocked_profiles)
         btn_export.pack(fill=tk.X, pady=5)
+        
+        # Estadísticas
+        self.stats_frame = ttk.LabelFrame(action_frame, text="Estadísticas por Etiqueta")
+        self.stats_frame.pack(fill=tk.BOTH, expand=True, pady=(20, 0))
+        
+        self.stats_text = tk.Text(self.stats_frame, height=10, width=25, font=("Consolas", 10), state='disabled', bg="#f0f0f0")
+        self.stats_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def load_profiles(self):
         """Carga los perfiles en la tabla."""
@@ -113,6 +120,17 @@ class BrowsersView(ttk.Frame):
             short_path = "..." + profile.path[-30:] if len(profile.path) > 30 else profile.path
             
             self.tree.insert("", "end", values=(profile.name, status, tags_str, short_path))
+            
+        # Calcular estadísticas
+        tag_counts = {}
+        for profile in profiles:
+            if not profile.tags:
+                tag_counts["(Sin etiqueta)"] = tag_counts.get("(Sin etiqueta)", 0) + 1
+            else:
+                for tag in profile.tags:
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        self.update_stats(tag_counts)
             
     def show_context_menu(self, event):
         """Muestra el menú contextual."""
@@ -361,3 +379,18 @@ class BrowsersView(ttk.Frame):
                 messagebox.showinfo(MSG_SUCCESS, f"Se exportaron {len(blocked_profiles)} perfiles a:\n{file_path}")
             except Exception as e:
                 messagebox.showerror(MSG_ERROR, f"Error al exportar: {e}")
+
+    def update_stats(self, tag_counts):
+        """Actualiza el widget de estadísticas."""
+        self.stats_text.config(state='normal')
+        self.stats_text.delete(1.0, tk.END)
+        
+        if not tag_counts:
+            self.stats_text.insert(tk.END, "No hay perfiles.")
+        else:
+            # Ordenar por nombre de etiqueta
+            sorted_tags = sorted(tag_counts.items(), key=lambda x: x[0].lower())
+            for tag, count in sorted_tags:
+                self.stats_text.insert(tk.END, f"• {tag}: {count}\n")
+                
+        self.stats_text.config(state='disabled')
