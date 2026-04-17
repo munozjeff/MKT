@@ -303,58 +303,76 @@ class BrowsersView(ttk.Frame):
         except:
             return False
 
-    def _rename_profile_with_whatsapp_number(self, service, profile_name: str) -> str:
+    def _rename_profile_with_whatsapp_number(self, service, profile_name: str) -> tuple:
         """
         Flujo reutilizable para renombrar un perfil usando el número de WhatsApp.
 
-        Pasos:
-          1. Verifica que el nombre del perfil contenga '_'; si no, se omite.
-          2. Extrae el número de teléfono haciendo clic en el botón 'Perfil' de WhatsApp.
-          3. Llama a BrowserService.rename_profile_with_phone() para renombrar en disco
-             y actualizar el registro de perfiles activos en memoria.
-          4. Refresca la lista de perfiles en la UI.
+        Ciclo completo para evitar WinError 5 (acceso denegado por lock de Chrome):
+          1. Verifica que el nombre contenga '_'; si no, se omite sin tocar nada.
+          2. Extrae el número de teléfono (browser abierto — lectura, sin problema).
+          3. Cierra el navegador para liberar el lock del directorio.
+          4. Renombra el directorio en disco.
+          5. Reabre el navegador con la nueva ruta (o la anterior si falló).
 
         Args:
             service: Instancia activa de WhatsAppService con driver abierto.
             profile_name (str): Nombre actual del perfil.
 
         Returns:
-            str: Nuevo nombre del perfil si se renombró, o el nombre original si se omitió.
+            tuple(str, WhatsAppService): (nombre_final, nueva_instancia_service)
+            El llamador DEBE reemplazar su variable `service` con la retornada.
         """
         # Regla: solo tiene sentido si hay '_' en el nombre
         if '_' not in profile_name:
             print(f"[RenombrePerfil] '{profile_name}' no contiene '_', se omite renombrado.")
-            return profile_name
+            return profile_name, service
 
         print(f"[RenombrePerfil] Iniciando flujo de renombrado para '{profile_name}'...")
 
         try:
-            # Paso 1: Extraer número de teléfono de WhatsApp
+            # ── Paso 1: Extraer número (browser abierto, sólo lectura) ──────────────
             phone_number = service.extract_whatsapp_phone_number()
 
             if not phone_number:
                 print("[RenombrePerfil] No se obtuvo número; renombrado cancelado.")
-                return profile_name
+                return profile_name, service
 
-            # Paso 2: Renombrar en disco y en memoria
+            # ── Paso 2: Cerrar browser para liberar lock del directorio ─────────────
+            print("[RenombrePerfil] Cerrando navegador para liberar lock de directorio...")
+            service.close()
+            time.sleep(2)  # Dar tiempo al SO para soltar todos los handles
+
+            # ── Paso 3: Renombrar en disco (browser ya cerrado) ────────────────────
             success, result = self.browser_service.rename_profile_with_phone(
                 current_name=profile_name,
                 phone_number=phone_number
             )
 
+            # El perfil a reabrir es el nuevo nombre si tuvo éxito, o el original si falló
+            target_name = result if success else profile_name
+
             if success:
-                new_name = result
-                print(f"[RenombrePerfil] ✅ Perfil renombrado: '{profile_name}' → '{new_name}'")
-                # Refrescar lista en hilo UI
+                print(f"[RenombrePerfil] ✅ Perfil renombrado: '{profile_name}' → '{target_name}'")
                 self.after(0, self.load_profiles)
-                return new_name
             else:
-                print(f"[RenombrePerfil] ⚠️ Renombrado omitido: {result}")
-                return profile_name
+                print(f"[RenombrePerfil] ⚠️ Renombrado fallido: {result}. Reabriendo con nombre original.")
+
+            # ── Paso 4: Reabrir navegador con la ruta correcta ────────────────────
+            all_profiles = self.browser_service.get_all_profiles()
+            target_profile = next((p for p in all_profiles if p.name == target_name), None)
+
+            new_service = WhatsAppService()
+            if target_profile:
+                print(f"[RenombrePerfil] Reabriendo navegador con perfil '{target_name}'...")
+                new_service.initialize_driver(target_profile.path)
+            else:
+                print(f"[RenombrePerfil] ⚠️ No se encontró perfil '{target_name}' para reabrir.")
+
+            return target_name, new_service
 
         except Exception as e:
             print(f"[RenombrePerfil] ❌ Error en flujo de renombrado: {e}")
-            return profile_name
+            return profile_name, service
 
     def _run_browser_manual(self, profile_name):
         """Ejecuta el navegador manualmente, maneja bloqueo y renombrado por número de teléfono."""
@@ -406,7 +424,9 @@ class BrowsersView(ttk.Frame):
 
                                 # 2. Renombrar perfil con número de teléfono (si aplica)
                                 if not renamed_done:
-                                    new_name = self._rename_profile_with_whatsapp_number(
+                                    # Retorna (nuevo_nombre, nueva_instancia_service)
+                                    # El browser se cierra y reabre dentro del flujo
+                                    new_name, service = self._rename_profile_with_whatsapp_number(
                                         service=service,
                                         profile_name=current_name[0]
                                     )
