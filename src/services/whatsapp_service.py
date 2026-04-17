@@ -573,87 +573,123 @@ class WhatsAppService:
         """
         Extrae el número de teléfono vinculado a la sesión activa de WhatsApp Web.
 
-        Flujo:
-          1. Hace clic en el botón con aria-label="Perfil" (navbar).
-          2. Espera y busca el span que contiene el número de teléfono 
-             (empieza con '+' o es un número largo).
-          3. Devuelve el texto limpio del número, o None si no lo encuentra.
+        Maneja DOS variantes del botón en la navbar:
+
+        Variante A — Botón aria-label="Perfil" (avatar genérico, sin foto de perfil):
+          Click → el panel de perfil abre directamente → buscar span con número.
+
+        Variante B — Botón aria-label="Tú" (tiene foto de perfil):
+          Click → menú desplegable → click en sub-botón "Perfil" → buscar span
+          con número (esta vez está junto al icono data-icon="phone").
 
         Returns:
             str | None: Número de teléfono (ej: "+57 321 7166019") o None.
         """
+        import re
         try:
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-
             short_wait = WebDriverWait(self.driver, 8)
 
-            # 1. Click en el botón de Perfil (navbar)
-            # Selector principal: botón con aria-label="Perfil" en la barra de navegación
-            profile_btn = short_wait.until(EC.element_to_be_clickable(
-                (By.CSS_SELECTOR, "button[aria-label='Perfil'][data-navbar-item='true']")
-            ))
-            profile_btn.click()
-            print("[RenombrePerfil] Click en botón Perfil realizado.")
-            time.sleep(1.5)  # Dar tiempo al panel de perfil para cargar
+            # ── 1. Detectar cuál botón está en la navbar ─────────────────────────
+            profile_btn = None
+            is_tu_button = False
 
-            # 2. Buscar el número de teléfono en el panel de perfil
-            # El span del número tiene un estilo con --x-fontSize y contiene '+' o dígitos
+            try:
+                profile_btn = short_wait.until(EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, "button[aria-label='Perfil'][data-navbar-item='true']")
+                ))
+                print("[RenombrePerfil] Botón 'Perfil' (avatar genérico) encontrado.")
+            except:
+                pass
+
+            if not profile_btn:
+                try:
+                    profile_btn = short_wait.until(EC.element_to_be_clickable(
+                        (By.CSS_SELECTOR, "button[aria-label='Tú'][data-navbar-item='true']")
+                    ))
+                    is_tu_button = True
+                    print("[RenombrePerfil] Botón 'Tú' (con foto) encontrado.")
+                except:
+                    pass
+
+            if not profile_btn:
+                print("[RenombrePerfil] No se encontró botón de perfil en la navbar.")
+                return None
+
+            # ── 2. Click en el botón principal ────────────────────────────────
+            profile_btn.click()
+            print(f"[RenombrePerfil] Click en botón '{'Tú' if is_tu_button else 'Perfil'}' realizado.")
+            time.sleep(1.5)
+
+            # ── 3. Variante B: click en sub-botón 'Perfil' ───────────────────────
+            if is_tu_button:
+                try:
+                    sub_btn = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((
+                            By.XPATH,
+                            # Detecta el botón con el texto 'Nombre, foto del perfil...' o el SVG ic-account-circle
+                            "//button[.//span[contains(text(), 'Nombre, foto del perfil')]]"
+                            " | //button[.//*[local-name()='title' and text()='ic-account-circle']]"
+                        ))
+                    )
+                    sub_btn.click()
+                    print("[RenombrePerfil] Click en sub-botón 'Perfil' realizado.")
+                    time.sleep(1.5)
+                except Exception as e:
+                    print(f"[RenombrePerfil] Error buscando sub-botón Perfil: {e}")
+
+            # ── 4. Buscar el número de teléfono en el panel ─────────────────────
             phone_number = None
 
-            # Estrategia A: Buscar spans con el formato de número (comienzan con '+' o son solo dígitos/espacios)
+            # Estrategia A: span junto al icón de teléfono (Variante B tiene este elemento)
             try:
-                spans = self.driver.find_elements(
+                elems = self.driver.find_elements(
                     By.XPATH,
-                    "//span[contains(@style, '--x-fontSize') and (starts-with(normalize-space(text()), '+') or string-length(normalize-space(text())) >= 7)]"
+                    "//div[.//*[@data-icon='phone']]//span[starts-with(normalize-space(text()), '+')]"
                 )
-                for span in spans:
-                    text = span.text.strip()
-                    # Filtrar: debe ser un número de teléfono válido
-                    # Contiene '+' al inicio o tiene solo dígitos, espacios y guiones
+                for el in elems:
+                    text = el.text.strip()
                     cleaned = text.replace(' ', '').replace('-', '').replace('+', '')
                     if text.startswith('+') and cleaned.isdigit() and len(cleaned) >= 7:
                         phone_number = text
-                        print(f"[RenombrePerfil] Número encontrado (estrategia A): {phone_number}")
+                        print(f"[RenombrePerfil] Número encontrado (icono phone): {phone_number}")
                         break
             except Exception as e:
-                print(f"[RenombrePerfil] Estrategia A falló: {e}")
+                print(f"[RenombrePerfil] Estrategia A (icono phone) falló: {e}")
 
-            # Estrategia B: Buscar dentro del panel de perfil cualquier span con número
+            # Estrategia B: span con --x-fontSize que empiece con '+'
             if not phone_number:
                 try:
-                    # El panel de perfil suele tener una sección con los datos del número
-                    all_spans = self.driver.find_elements(By.XPATH, "//span[contains(@class, 'x193iq5w')]")
-                    for span in all_spans:
+                    spans = self.driver.find_elements(
+                        By.XPATH,
+                        "//span[contains(@style, '--x-fontSize') and starts-with(normalize-space(text()), '+')]"
+                    )
+                    for span in spans:
                         text = span.text.strip()
                         cleaned = text.replace(' ', '').replace('-', '').replace('+', '')
                         if text.startswith('+') and cleaned.isdigit() and len(cleaned) >= 7:
                             phone_number = text
-                            print(f"[RenombrePerfil] Número encontrado (estrategia B): {phone_number}")
+                            print(f"[RenombrePerfil] Número encontrado (--x-fontSize): {phone_number}")
                             break
                 except Exception as e:
-                    print(f"[RenombrePerfil] Estrategia B falló: {e}")
+                    print(f"[RenombrePerfil] Estrategia B (--x-fontSize) falló: {e}")
 
-            # Estrategia C: Buscar en cualquier span visible en la página el patrón de número
+            # Estrategia C: regex sobre todos los spans (fallback total)
             if not phone_number:
                 try:
-                    import re
-                    all_spans = self.driver.find_elements(By.TAG_NAME, "span")
                     phone_pattern = re.compile(r'^\+[\d\s\-]{7,20}$')
-                    for span in all_spans:
+                    for span in self.driver.find_elements(By.TAG_NAME, "span"):
                         try:
                             text = span.text.strip()
                             if phone_pattern.match(text):
                                 phone_number = text
-                                print(f"[RenombrePerfil] Número encontrado (estrategia C): {phone_number}")
+                                print(f"[RenombrePerfil] Número encontrado (regex fallback): {phone_number}")
                                 break
                         except:
                             continue
                 except Exception as e:
-                    print(f"[RenombrePerfil] Estrategia C falló: {e}")
+                    print(f"[RenombrePerfil] Estrategia C (regex) falló: {e}")
 
-            # 3. Cerrar el panel de perfil con ESC para no dejar la UI en estado raro
+            # ── 5. Cerrar el panel con ESC ───────────────────────────────────
             try:
                 from selenium.webdriver.common.action_chains import ActionChains
                 ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
@@ -662,7 +698,7 @@ class WhatsAppService:
                 pass
 
             if phone_number:
-                print(f"[RenombrePerfil] Número de teléfono extraído: {phone_number}")
+                print(f"[RenombrePerfil] Número extraído: {phone_number}")
             else:
                 print("[RenombrePerfil] No se pudo extraer el número de teléfono.")
 
@@ -670,7 +706,6 @@ class WhatsAppService:
 
         except Exception as e:
             print(f"[RenombrePerfil] Error extrayendo número de teléfono: {e}")
-            # Intentar cerrar el panel si quedó abierto
             try:
                 from selenium.webdriver.common.action_chains import ActionChains
                 ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
