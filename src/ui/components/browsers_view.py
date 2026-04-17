@@ -328,11 +328,14 @@ class BrowsersView(ttk.Frame):
             return profile_name, service
 
         print(f"[RenombrePerfil] Iniciando flujo de renombrado para '{profile_name}'...")
-        print("[RenombrePerfil] Esperando 5s para que WhatsApp cargue completamente...")
-        time.sleep(5)  # Dar tiempo a que la UI de WhatsApp termine de renderizar
 
         try:
-            # ── Paso 1: Extraer número (browser abierto, sólo lectura) ──────────────
+            # ── Paso 1: Esperar a que el navbar de WhatsApp esté completamente cargado
+            # La sesión acaba de detectarse pero el navbar puede no estar listo aún.
+            print("[RenombrePerfil] Esperando 5s para que el navbar de WhatsApp cargue...")
+            time.sleep(5)
+
+            # ── Paso 2: Extraer número (browser abierto, sólo lectura) ──────────────
             phone_number = service.extract_whatsapp_phone_number()
 
             if not phone_number:
