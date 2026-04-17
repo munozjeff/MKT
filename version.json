@@ -1,8 +1,8 @@
 {
-    "version": "1.4.5",
+    "version": "1.4.6",
     "build": "20260417",
     "release_date": "2026-04-17",
-    "release_notes": "- Nueva función: Renombrado automático de perfil con número de WhatsApp al escanear QR\n- Fix: Cierre y reapertura del browser antes de renombrar para evitar error de acceso denegado (WinError 5)\n- Nueva función: Estadísticas de perfiles por etiqueta\n- Nueva función: Exportar nombres de perfiles con etiqueta BLOQUEADO",
+    "release_notes": "- Fix: Espera 5s al navbar de WhatsApp antes de extraer el número del perfil\n- Fix: Cierre y reapertura del browser antes de renombrar para evitar WinError 5\n- Nueva función: Renombrado automático de perfil con número de WhatsApp al escanear QR\n- Nueva función: Estadísticas de perfiles por etiqueta\n- Nueva función: Exportar nombres de perfiles con etiqueta BLOQUEADO",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
