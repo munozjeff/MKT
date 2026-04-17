@@ -569,6 +569,115 @@ class WhatsAppService:
             print(f"Error al enviar mensaje simple: {e}")
             return False
     
+    def extract_whatsapp_phone_number(self) -> str | None:
+        """
+        Extrae el número de teléfono vinculado a la sesión activa de WhatsApp Web.
+
+        Flujo:
+          1. Hace clic en el botón con aria-label="Perfil" (navbar).
+          2. Espera y busca el span que contiene el número de teléfono 
+             (empieza con '+' o es un número largo).
+          3. Devuelve el texto limpio del número, o None si no lo encuentra.
+
+        Returns:
+            str | None: Número de teléfono (ej: "+57 321 7166019") o None.
+        """
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+
+            short_wait = WebDriverWait(self.driver, 8)
+
+            # 1. Click en el botón de Perfil (navbar)
+            # Selector principal: botón con aria-label="Perfil" en la barra de navegación
+            profile_btn = short_wait.until(EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "button[aria-label='Perfil'][data-navbar-item='true']")
+            ))
+            profile_btn.click()
+            print("[RenombrePerfil] Click en botón Perfil realizado.")
+            time.sleep(1.5)  # Dar tiempo al panel de perfil para cargar
+
+            # 2. Buscar el número de teléfono en el panel de perfil
+            # El span del número tiene un estilo con --x-fontSize y contiene '+' o dígitos
+            phone_number = None
+
+            # Estrategia A: Buscar spans con el formato de número (comienzan con '+' o son solo dígitos/espacios)
+            try:
+                spans = self.driver.find_elements(
+                    By.XPATH,
+                    "//span[contains(@style, '--x-fontSize') and (starts-with(normalize-space(text()), '+') or string-length(normalize-space(text())) >= 7)]"
+                )
+                for span in spans:
+                    text = span.text.strip()
+                    # Filtrar: debe ser un número de teléfono válido
+                    # Contiene '+' al inicio o tiene solo dígitos, espacios y guiones
+                    cleaned = text.replace(' ', '').replace('-', '').replace('+', '')
+                    if text.startswith('+') and cleaned.isdigit() and len(cleaned) >= 7:
+                        phone_number = text
+                        print(f"[RenombrePerfil] Número encontrado (estrategia A): {phone_number}")
+                        break
+            except Exception as e:
+                print(f"[RenombrePerfil] Estrategia A falló: {e}")
+
+            # Estrategia B: Buscar dentro del panel de perfil cualquier span con número
+            if not phone_number:
+                try:
+                    # El panel de perfil suele tener una sección con los datos del número
+                    all_spans = self.driver.find_elements(By.XPATH, "//span[contains(@class, 'x193iq5w')]")
+                    for span in all_spans:
+                        text = span.text.strip()
+                        cleaned = text.replace(' ', '').replace('-', '').replace('+', '')
+                        if text.startswith('+') and cleaned.isdigit() and len(cleaned) >= 7:
+                            phone_number = text
+                            print(f"[RenombrePerfil] Número encontrado (estrategia B): {phone_number}")
+                            break
+                except Exception as e:
+                    print(f"[RenombrePerfil] Estrategia B falló: {e}")
+
+            # Estrategia C: Buscar en cualquier span visible en la página el patrón de número
+            if not phone_number:
+                try:
+                    import re
+                    all_spans = self.driver.find_elements(By.TAG_NAME, "span")
+                    phone_pattern = re.compile(r'^\+[\d\s\-]{7,20}$')
+                    for span in all_spans:
+                        try:
+                            text = span.text.strip()
+                            if phone_pattern.match(text):
+                                phone_number = text
+                                print(f"[RenombrePerfil] Número encontrado (estrategia C): {phone_number}")
+                                break
+                        except:
+                            continue
+                except Exception as e:
+                    print(f"[RenombrePerfil] Estrategia C falló: {e}")
+
+            # 3. Cerrar el panel de perfil con ESC para no dejar la UI en estado raro
+            try:
+                from selenium.webdriver.common.action_chains import ActionChains
+                ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+                time.sleep(0.5)
+            except:
+                pass
+
+            if phone_number:
+                print(f"[RenombrePerfil] Número de teléfono extraído: {phone_number}")
+            else:
+                print("[RenombrePerfil] No se pudo extraer el número de teléfono.")
+
+            return phone_number
+
+        except Exception as e:
+            print(f"[RenombrePerfil] Error extrayendo número de teléfono: {e}")
+            # Intentar cerrar el panel si quedó abierto
+            try:
+                from selenium.webdriver.common.action_chains import ActionChains
+                ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+            except:
+                pass
+            return None
+
     def close_chat(self):
         """Cierra el chat actual."""
         try:

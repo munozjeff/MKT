@@ -139,3 +139,68 @@ class BrowserService:
             bool: True si está ocupado
         """
         return name in self._active_profiles
+
+    def rename_profile_with_phone(self, current_name: str, phone_number: str) -> tuple[bool, str]:
+        """
+        Renombra un perfil usando el número de teléfono como prefijo.
+
+        Regla de renombrado:
+          - Solo actúa si el nombre actual contiene '_' (guion bajo).
+          - Reemplaza el texto que está ANTES del primer '_' con el número de teléfono.
+          - Ejemplo: 'perfil_15'      → '+57 321 7166019_15'
+          - Ejemplo: 'perfil_1_2'     → '+57 321 7166019_1_2'
+          - Si no hay '_' en el nombre, omite el renombrado (retorna False).
+          - Si el nuevo nombre ya existe en disco, también omite (retorna False).
+
+        El perfil puede estar en uso (activo). En ese caso se actualiza el registro
+        de perfiles activos en memoria para que el unlock posterior no falle.
+
+        Args:
+            current_name (str): Nombre actual del perfil.
+            phone_number (str): Número de teléfono extraído de WhatsApp.
+
+        Returns:
+            tuple[bool, str]: (éxito, nuevo_nombre_o_mensaje_de_error)
+        """
+        import os
+        import re
+
+        # --- Validaciones previas ---
+        phone_clean = phone_number.strip() if phone_number else ""
+        if not phone_clean:
+            return False, "Número de teléfono vacío."
+
+        if '_' not in current_name:
+            return False, f"El perfil '{current_name}' no contiene '_', se omite renombrado."
+
+        # Construir nuevo nombre: reemplazar solo lo que está antes del primer '_'
+        underscore_idx = current_name.index('_')
+        suffix = current_name[underscore_idx:]          # e.g. "_15" o "_1_2"
+        new_name = f"{phone_clean}{suffix}"             # e.g. "+57 321 7166019_15"
+
+        if new_name == current_name:
+            return False, f"El nombre nuevo '{new_name}' es igual al actual, sin cambios."
+
+        old_path = os.path.join(PROFILES_DIR, current_name)
+        new_path = os.path.join(PROFILES_DIR, new_name)
+
+        if not os.path.exists(old_path):
+            return False, f"Directorio del perfil '{current_name}' no encontrado."
+
+        if os.path.exists(new_path):
+            return False, f"Ya existe un perfil con el nombre '{new_name}'."
+
+        # --- Renombrar directorio ---
+        try:
+            os.rename(old_path, new_path)
+            print(f"[RenombrePerfil] '{current_name}' → '{new_name}' (directorio renombrado)")
+        except Exception as e:
+            return False, f"Error al renombrar directorio: {e}"
+
+        # --- Actualizar registro de activos en memoria (si estaba activo) ---
+        if current_name in self._active_profiles:
+            self._active_profiles.discard(current_name)
+            self._active_profiles.add(new_name)
+            print(f"[RenombrePerfil] Registro de activos actualizado: '{current_name}' → '{new_name}'")
+
+        return True, new_name

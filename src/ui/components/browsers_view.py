@@ -303,30 +303,85 @@ class BrowsersView(ttk.Frame):
         except:
             return False
 
+    def _rename_profile_with_whatsapp_number(self, service, profile_name: str) -> str:
+        """
+        Flujo reutilizable para renombrar un perfil usando el número de WhatsApp.
+
+        Pasos:
+          1. Verifica que el nombre del perfil contenga '_'; si no, se omite.
+          2. Extrae el número de teléfono haciendo clic en el botón 'Perfil' de WhatsApp.
+          3. Llama a BrowserService.rename_profile_with_phone() para renombrar en disco
+             y actualizar el registro de perfiles activos en memoria.
+          4. Refresca la lista de perfiles en la UI.
+
+        Args:
+            service: Instancia activa de WhatsAppService con driver abierto.
+            profile_name (str): Nombre actual del perfil.
+
+        Returns:
+            str: Nuevo nombre del perfil si se renombró, o el nombre original si se omitió.
+        """
+        # Regla: solo tiene sentido si hay '_' en el nombre
+        if '_' not in profile_name:
+            print(f"[RenombrePerfil] '{profile_name}' no contiene '_', se omite renombrado.")
+            return profile_name
+
+        print(f"[RenombrePerfil] Iniciando flujo de renombrado para '{profile_name}'...")
+
+        try:
+            # Paso 1: Extraer número de teléfono de WhatsApp
+            phone_number = service.extract_whatsapp_phone_number()
+
+            if not phone_number:
+                print("[RenombrePerfil] No se obtuvo número; renombrado cancelado.")
+                return profile_name
+
+            # Paso 2: Renombrar en disco y en memoria
+            success, result = self.browser_service.rename_profile_with_phone(
+                current_name=profile_name,
+                phone_number=phone_number
+            )
+
+            if success:
+                new_name = result
+                print(f"[RenombrePerfil] ✅ Perfil renombrado: '{profile_name}' → '{new_name}'")
+                # Refrescar lista en hilo UI
+                self.after(0, self.load_profiles)
+                return new_name
+            else:
+                print(f"[RenombrePerfil] ⚠️ Renombrado omitido: {result}")
+                return profile_name
+
+        except Exception as e:
+            print(f"[RenombrePerfil] ❌ Error en flujo de renombrado: {e}")
+            return profile_name
+
     def _run_browser_manual(self, profile_name):
-        """Ejecuta el navegador manualmente y maneja el bloqueo."""
+        """Ejecuta el navegador manualmente, maneja bloqueo y renombrado por número de teléfono."""
         if not self.browser_service.lock_profile(profile_name):
             return
-            
+
+        # Usamos una variable mutable para que el bloque finally use el nombre actualizado
+        # después de un posible renombrado.
+        current_name = [profile_name]  # Lista de un elemento para mutabilidad en closures
+
         try:
             # Actualizar UI en hilo principal
             self.after(0, self.load_profiles)
-            
+
             profiles = self.browser_service.get_all_profiles()
             profile = next((p for p in profiles if p.name == profile_name), None)
-            
+
             if not profile:
                 return
 
             # Verificar si el perfil estaba bloqueado al iniciarse
             was_blocked = "BLOQUEADO" in profile.tags
             unblocked_done = False
-                
+            renamed_done = False
+
             service = WhatsAppService()
             if service.initialize_driver(profile.path):
-                # Mantener abierto hasta que el usuario lo cierre manualmente
-                # En Selenium directo no hay "wait until closed" fácil sin loop, 
-                # así que monitoreamos
                 while True:
                     time.sleep(1)
                     try:
@@ -335,24 +390,39 @@ class BrowsersView(ttk.Frame):
                     except:
                         break
 
-                    # Solo intentar desbloquear si el perfil era BLOQUEADO y no se ha desbloqueado aún
-                    if was_blocked and not unblocked_done:
+                    # --- Lógica de desbloqueo y/o renombrado ---
+                    # Solo intenta si la sesión está activa y el botón Nuevo chat es visible
+                    if not unblocked_done or not renamed_done:
                         try:
                             session_ok = service.is_session_active()
                             if session_ok and self._check_whatsapp_logged_in(service):
-                                # Sesión activa y botón "Nuevo chat" visible → WhatsApp listo
-                                profile.remove_tag("BLOQUEADO")
-                                unblocked_done = True
-                                print(f"[Navegadores] Perfil '{profile_name}' desbloqueado exitosamente.")
-                                # Refrescar lista en hilo UI
-                                self.after(0, self.load_profiles)
+
+                                # 1. Desbloquear etiqueta BLOQUEADO (si aplica)
+                                if was_blocked and not unblocked_done:
+                                    profile.remove_tag("BLOQUEADO")
+                                    unblocked_done = True
+                                    print(f"[Navegadores] Perfil '{current_name[0]}' desbloqueado exitosamente.")
+                                    self.after(0, self.load_profiles)
+
+                                # 2. Renombrar perfil con número de teléfono (si aplica)
+                                if not renamed_done:
+                                    new_name = self._rename_profile_with_whatsapp_number(
+                                        service=service,
+                                        profile_name=current_name[0]
+                                    )
+                                    renamed_done = True  # Solo intentamos UNA vez
+                                    if new_name != current_name[0]:
+                                        # El nombre cambió: actualizar referencia para el finally
+                                        current_name[0] = new_name
+
                         except Exception as e:
-                            print(f"Error verificando desbloqueo de perfil: {e}")
-            
+                            print(f"Error en verificación pós-sesión: {e}")
+
         except Exception as e:
             print(f"Error abriendo navegador: {e}")
         finally:
-            self.browser_service.unlock_profile(profile_name)
+            # Usamos current_name[0] porque puede haber cambiado si se renombró
+            self.browser_service.unlock_profile(current_name[0])
             # Actualizar UI
             self.after(0, self.load_profiles)
 
