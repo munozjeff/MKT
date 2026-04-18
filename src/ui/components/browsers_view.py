@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 import time
+from datetime import datetime
 from ...services.browser_service import BrowserService
 from ...services.whatsapp_service import WhatsAppService
 from ..styles import *
@@ -66,7 +67,7 @@ class BrowsersView(ttk.Frame):
         action_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(PADDING_MEDIUM, 0))
         
         # Crear nuevo perfil
-        lbl_new = ttk.Label(action_frame, text="Nuevo Perfil:")
+        lbl_new = ttk.Label(action_frame, text="Nuevo Perfil (vacío = nombre temporal):")
         lbl_new.pack(anchor=tk.W, pady=(0, 5))
         
         self.entry_name = ttk.Entry(action_frame)
@@ -104,20 +105,40 @@ class BrowsersView(ttk.Frame):
         self.stats_text = tk.Text(self.stats_frame, height=10, width=25, font=("Consolas", 10), state='disabled', bg="#f0f0f0")
         self.stats_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+    def _sort_profiles_by_tags(self, profiles):
+        """
+        Ordena perfiles agrupando por conjunto de etiquetas (frozenset, orden no importa).
+        
+        Criterio:
+          1. Más etiquetas primero (grupos más específicos al inicio).
+          2. Dentro del mismo número de etiquetas, ordenar grupos alfabéticamente.
+          3. Dentro de cada grupo, ordenar perfiles por nombre.
+          4. Perfiles sin etiquetas al final.
+        """
+        def sort_key(profile):
+            tag_set = frozenset(t.upper() for t in profile.tags)
+            n_tags = len(tag_set)
+            # Negamos n_tags para que más etiquetas vayan primero
+            group_label = tuple(sorted(tag_set))  # clave de grupo reproducible
+            return (-n_tags, group_label, profile.name.lower())
+        
+        return sorted(profiles, key=sort_key)
+
     def load_profiles(self):
-        """Carga los perfiles en la tabla."""
+        """Carga los perfiles en la tabla ordenados por grupos de etiquetas."""
         # Limpiar tabla
         for item in self.tree.get_children():
             self.tree.delete(item)
             
         profiles = self.browser_service.get_all_profiles()
+        profiles_sorted = self._sort_profiles_by_tags(profiles)
         
-        for profile in profiles:
+        for profile in profiles_sorted:
             is_active = self.browser_service.is_profile_active(profile.name)
             status = "Ocupado" if is_active else "Disponible"
             
-            # Formato de etiquetas
-            tags_str = ", ".join(profile.tags) if profile.tags else ""
+            # Formato de etiquetas (ordenadas alfabéticamente para consistencia visual)
+            tags_str = ", ".join(sorted(profile.tags)) if profile.tags else ""
             
             # Solo mostrar parte final de la ruta para que no sea tan larga
             short_path = "..." + profile.path[-30:] if len(profile.path) > 30 else profile.path
@@ -143,11 +164,11 @@ class BrowsersView(ttk.Frame):
             self.context_menu.post(event.x_root, event.y_root)
 
     def create_profile(self):
-        """Crea un nuevo perfil."""
+        """Crea un nuevo perfil. Si el nombre está vacío genera uno temporal."""
         name = self.entry_name.get().strip()
         if not name:
-            messagebox.showerror(MSG_ERROR, "El nombre no puede estar vacío")
-            return
+            # Nombre temporal con sufijo de tiempo; el '_' activa el renombrado automático
+            name = f"perfil_{datetime.now().strftime('%H%M%S')}"
             
         if self.browser_service.create_profile(name):
             messagebox.showinfo(MSG_SUCCESS, f"Perfil '{name}' creado correctamente")
@@ -454,13 +475,15 @@ class BrowsersView(ttk.Frame):
             self.after(0, self.load_profiles)
 
     def export_blocked_profiles(self):
-        """Exporta los nombres de perfiles con la etiqueta BLOQUEADO."""
-        profiles = self.browser_service.get_all_profiles()
-        blocked_profiles = [p.name for p in profiles if "BLOQUEADO" in p.tags]
+        """Exporta los perfiles con etiqueta BLOQUEADO, con el mismo orden de agrupación."""
+        all_profiles = self.browser_service.get_all_profiles()
+        blocked = [p for p in all_profiles if "BLOQUEADO" in [t.upper() for t in p.tags]]
         
-        if not blocked_profiles:
+        if not blocked:
             messagebox.showinfo("Exportar", "No hay perfiles con la etiqueta 'BLOQUEADO'.")
             return
+            
+        blocked_sorted = self._sort_profiles_by_tags(blocked)
             
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",
@@ -472,18 +495,23 @@ class BrowsersView(ttk.Frame):
         if file_path:
             try:
                 with open(file_path, "w", encoding="utf-8") as f:
-                    f.write("\n".join(blocked_profiles))
-                messagebox.showinfo(MSG_SUCCESS, f"Se exportaron {len(blocked_profiles)} perfiles a:\n{file_path}")
+                    for p in blocked_sorted:
+                        tags_str = ", ".join(sorted(p.tags)) if p.tags else ""
+                        line = f"{p.name}\t{tags_str}" if tags_str else p.name
+                        f.write(line + "\n")
+                messagebox.showinfo(MSG_SUCCESS, f"Se exportaron {len(blocked_sorted)} perfiles a:\n{file_path}")
             except Exception as e:
                 messagebox.showerror(MSG_ERROR, f"Error al exportar: {e}")
 
     def export_all_profiles(self):
-        """Exporta los nombres de todos los perfiles disponibles."""
+        """Exporta todos los perfiles con el mismo orden de agrupación por etiquetas."""
         profiles = self.browser_service.get_all_profiles()
         
         if not profiles:
             messagebox.showinfo("Exportar", "No hay perfiles disponibles para exportar.")
             return
+            
+        profiles_sorted = self._sort_profiles_by_tags(profiles)
             
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",
@@ -495,8 +523,11 @@ class BrowsersView(ttk.Frame):
         if file_path:
             try:
                 with open(file_path, "w", encoding="utf-8") as f:
-                    f.write("\n".join(p.name for p in profiles))
-                messagebox.showinfo(MSG_SUCCESS, f"Se exportaron {len(profiles)} perfiles a:\n{file_path}")
+                    for p in profiles_sorted:
+                        tags_str = ", ".join(sorted(p.tags)) if p.tags else ""
+                        line = f"{p.name}\t{tags_str}" if tags_str else p.name
+                        f.write(line + "\n")
+                messagebox.showinfo(MSG_SUCCESS, f"Se exportaron {len(profiles_sorted)} perfiles a:\n{file_path}")
             except Exception as e:
                 messagebox.showerror(MSG_ERROR, f"Error al exportar: {e}")
 
