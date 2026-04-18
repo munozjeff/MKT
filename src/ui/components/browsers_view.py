@@ -94,6 +94,9 @@ class BrowsersView(ttk.Frame):
         btn_export = ttk.Button(action_frame, text="Exportar Bloqueados", command=self.export_blocked_profiles)
         btn_export.pack(fill=tk.X, pady=5)
         
+        btn_export_all = ttk.Button(action_frame, text="Exportar Todos", command=self.export_all_profiles)
+        btn_export_all.pack(fill=tk.X, pady=5)
+        
         # Estadísticas
         self.stats_frame = ttk.LabelFrame(action_frame, text="Estadísticas por Etiqueta")
         self.stats_frame.pack(fill=tk.BOTH, expand=True, pady=(20, 0))
@@ -471,6 +474,29 @@ class BrowsersView(ttk.Frame):
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write("\n".join(blocked_profiles))
                 messagebox.showinfo(MSG_SUCCESS, f"Se exportaron {len(blocked_profiles)} perfiles a:\n{file_path}")
+            except Exception as e:
+                messagebox.showerror(MSG_ERROR, f"Error al exportar: {e}")
+
+    def export_all_profiles(self):
+        """Exporta los nombres de todos los perfiles disponibles."""
+        profiles = self.browser_service.get_all_profiles()
+        
+        if not profiles:
+            messagebox.showinfo("Exportar", "No hay perfiles disponibles para exportar.")
+            return
+            
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Archivos de texto", "*.txt"), ("Todos los archivos", "*.*")],
+            title="Guardar todos los perfiles",
+            initialfile="todos_los_perfiles.txt"
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write("\n".join(p.name for p in profiles))
+                messagebox.showinfo(MSG_SUCCESS, f"Se exportaron {len(profiles)} perfiles a:\n{file_path}")
             except Exception as e:
                 messagebox.showerror(MSG_ERROR, f"Error al exportar: {e}")
 
