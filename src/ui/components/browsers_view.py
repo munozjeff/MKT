@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from ...services.browser_service import BrowserService
 from ...services.whatsapp_service import WhatsAppService
+from ...services.google_messages_service import GoogleMessagesService
 from ..styles import *
 
 
@@ -57,7 +58,8 @@ class BrowsersView(ttk.Frame):
         self.context_menu = tk.Menu(self.tree, tearoff=0)
         self.context_menu.add_command(label="Editar Etiquetas", command=self.edit_tags)
         self.context_menu.add_separator()
-        self.context_menu.add_command(label="Abrir Navegador", command=self.open_profile)
+        self.context_menu.add_command(label="Abrir Navegador (WhatsApp)", command=self.open_profile)
+        self.context_menu.add_command(label="Abrir Navegador (Google Messages)", command=self.open_profile_google_messages)
         self.context_menu.add_command(label="Eliminar Perfil", command=self.delete_profile)
         
         self.tree.bind("<Button-3>", self.show_context_menu)
@@ -83,8 +85,11 @@ class BrowsersView(ttk.Frame):
         btn_tags = ttk.Button(action_frame, text="Editar Etiquetas", command=self.edit_tags)
         btn_tags.pack(fill=tk.X, pady=5)
         
-        btn_open = ttk.Button(action_frame, text="Abrir Navegador", command=self.open_profile)
+        btn_open = ttk.Button(action_frame, text="Abrir WhatsApp", command=self.open_profile)
         btn_open.pack(fill=tk.X, pady=5)
+        
+        btn_open_gm = ttk.Button(action_frame, text="Abrir Google Messages", command=self.open_profile_google_messages)
+        btn_open_gm.pack(fill=tk.X, pady=5)
         
         btn_delete = ttk.Button(action_frame, text="Eliminar Perfil", command=self.delete_profile)
         btn_delete.pack(fill=tk.X, pady=5)
@@ -229,6 +234,55 @@ class BrowsersView(ttk.Frame):
             threading.Thread(target=self._run_browser_manual, args=(name,)).start()
             # Pequeño delay para no saturar si son muchos
             time.sleep(1)
+
+    def open_profile_google_messages(self):
+        """Abre el navegador con el perfil seleccionado directamente en Google Messages."""
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showwarning(MSG_WARNING, "Seleccione un perfil para abrir")
+            return
+
+        for item_id in selected_items:
+            item = self.tree.item(item_id)
+            name = item["values"][0]
+
+            if self.browser_service.is_profile_active(name):
+                print(f"Perfil {name} ya está en uso, omitiendo.")
+                continue
+
+            threading.Thread(
+                target=self._run_browser_google_messages, args=(name,)
+            ).start()
+            time.sleep(1)
+
+    def _run_browser_google_messages(self, profile_name):
+        """Abre el navegador con Google Messages y mantiene el perfil bloqueado mientras Chrome esté abierto."""
+        if not self.browser_service.lock_profile(profile_name):
+            return
+
+        try:
+            self.after(0, self.load_profiles)
+
+            profiles = self.browser_service.get_all_profiles()
+            profile = next((p for p in profiles if p.name == profile_name), None)
+
+            if not profile:
+                return
+
+            service = GoogleMessagesService()
+            if service.initialize_driver(profile.path):
+                while True:
+                    time.sleep(1)
+                    try:
+                        service.driver.title  # Verifica si Chrome sigue vivo
+                    except Exception:
+                        break
+
+        except Exception as e:
+            print(f"Error abriendo Google Messages: {e}")
+        finally:
+            self.browser_service.unlock_profile(profile_name)
+            self.after(0, self.load_profiles)
 
     def edit_tags(self):
         """Abre diálogo para editar etiquetas (soporta selección múltiple)."""
