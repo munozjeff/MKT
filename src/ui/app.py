@@ -138,10 +138,7 @@ class App(tk.Tk):
     def check_for_updates_manual(self):
         """Verifica actualizaciones manualmente (botón)."""
         import threading
-        
-        # Feedback visual inmediato
-        messagebox.showinfo("Buscando...", "Verificando actualizaciones...")
-        
+
         def _check_thread():
             try:
                 has_update, update_info = self.update_service.check_for_updates()
