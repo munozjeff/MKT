@@ -26,6 +26,14 @@ CHROMEDRIVER_PATH = os.path.join(BASE_DIR, "chromedriver.exe")
 WHATSAPP_URL = "https://web.whatsapp.com"
 WHATSAPP_WAIT_TIMEOUT = 60  # segundos
 
+# Configuración de Google Messages (SMS)
+GOOGLE_MESSAGES_URL = "https://messages.google.com/web/authentication?hl=es-419"
+GOOGLE_MESSAGES_WAIT_TIMEOUT = 60  # segundos
+
+# Canales de envío
+CHANNEL_WHATSAPP = "WhatsApp"
+CHANNEL_SMS = "SMS (Google Messages)"
+
 # Configuración de envío
 MIN_INTERVAL = 20  # segundos mínimos entre mensajes
 MIN_INTERVAL_ANTI_SPAM = 30  # segundos mínimos para modo anti-spam

@@ -11,27 +11,31 @@ from ...services.contact_service import ContactService
 from ...services.automation_runner import AutomationRunner
 from ...services.distributed_runner import DistributedAutomationRunner
 from ...services.rotation_runner import RotationAutomationRunner
+from ...services.sms_automation_runner import SmsAutomationRunner
+from ...services.distributed_sms_runner import DistributedSmsRunner
+from ...services.rotation_sms_runner import RotationSmsRunner
 from ...utils.file_utils import load_excel
 from ..styles import *
 
 class SendView(ttk.Frame):
     """Vista principal de envío de mensajes."""
     
-    def __init__(self, parent):
+    def __init__(self, parent, channel="WhatsApp"):
         super().__init__(parent)
         self.browser_service = BrowserService()
         self.campaign_service = CampaignService()
         self.contact_service = ContactService()
+        self._channel = channel
         
         self.setup_ui()
         self.load_data()
-        
+        # Aplicar estado inicial del canal (habilita/deshabilita monitor)
+        self.on_channel_change()
+
     def setup_ui(self):
         """Configura la interfaz."""
-        lbl_title = ttk.Label(self, text=BTN_SEND_MESSAGES, font=FONT_TITLE)
-    def setup_ui(self):
-        """Configura la interfaz."""
-        lbl_title = ttk.Label(self, text=BTN_SEND_MESSAGES, font=FONT_TITLE)
+        canal_label = "WhatsApp" if self._channel == "WhatsApp" else "SMS (Google Messages)"
+        lbl_title = ttk.Label(self, text=f"Enviar Mensajes - {canal_label}", font=FONT_TITLE)
         lbl_title.pack(pady=PADDING_MEDIUM)
         
         # Contenedor principal
@@ -48,6 +52,9 @@ class SendView(ttk.Frame):
         
         grid_opts_top = {'padx': 5, 'pady': 5, 'sticky': tk.W}
         
+        # Canal fijado (viene del botón del menú, no se cambia aquí)
+        self.var_channel = tk.StringVar(value=self._channel)
+
         # 0. Selector de Modo
         ttk.Label(top_frame, text="Modo de Envío:").grid(row=0, column=0, **grid_opts_top)
         self.var_mode = tk.StringVar(value="Individual")
@@ -67,7 +74,7 @@ class SendView(ttk.Frame):
         
         # Contenedor para selector de perfiles (Single vs Multi)
         self.frame_profiles = ttk.Frame(top_frame)
-        self.frame_profiles.grid(row=1, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.frame_profiles.grid(row=2, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
         
         # Modo Individual: Combobox
         self.combo_profiles = ttk.Combobox(self.frame_profiles, state="readonly")
@@ -365,6 +372,26 @@ class SendView(ttk.Frame):
         """Enable/disable auto-reply text input."""
         enabled = self.var_autoreply_enabled.get()
         self.ent_autoreply_text.config(state="normal" if enabled else "disabled")
+
+    def on_channel_change(self):
+        """Muestra u oculta la sección Monitor según el canal seleccionado.
+        El monitor solo aplica a WhatsApp, no a Google Messages."""
+        is_whatsapp = self.var_channel.get() == "WhatsApp"
+        monitor_state = "normal" if is_whatsapp else "disabled"
+
+        # Habilitar/deshabilitar el checkbox del monitor
+        self.chk_monitor.config(state=monitor_state)
+
+        if not is_whatsapp:
+            # Desactivar monitor y limpiar campos al cambiar a SMS
+            self.var_monitor_enabled.set(False)
+            self.on_monitor_toggle()  # propaga el disable a los campos hijo
+
+        # Indicador visual en la etiqueta
+        if is_whatsapp:
+            self.chk_monitor.config(text="Activar Monitor")
+        else:
+            self.chk_monitor.config(text="Activar Monitor (solo WhatsApp)")
             
     def load_excel_file(self):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
@@ -651,30 +678,59 @@ class SendView(ttk.Frame):
                     self.refresh_profiles()
             self.after(0, _finish)
             
+        channel = self.var_channel.get()
+        is_sms = (channel == "SMS (Google Messages)")
+
         if mode == "Individual":
-            runner = AutomationRunner(
-                browser_profile=target_profiles[0], # Solo uno
-                config=config,
-                phone_numbers=phones,
-                user_data=user_data,
-                contact_data=contact_data,
-                campaign=campaign,
-                fallback_campaign=fallback_campaign,  # Nueva: campaña de respaldo
-                progress_callback=update_ui,
-                completion_callback=on_complete
-            )
+            if is_sms:
+                runner = SmsAutomationRunner(
+                    browser_profile=target_profiles[0],
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
+            else:
+                runner = AutomationRunner(
+                    browser_profile=target_profiles[0],
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
         elif mode == "Distribuido":
-            runner = DistributedAutomationRunner(
-                browser_profiles=target_profiles, # Lista de perfiles
-                config=config,
-                phone_numbers=phones,
-                user_data=user_data,
-                contact_data=contact_data,
-                campaign=campaign,
-                fallback_campaign=fallback_campaign,  # Nueva: campaña de respaldo
-                progress_callback=update_ui,
-                completion_callback=on_complete
-            )
+            if is_sms:
+                runner = DistributedSmsRunner(
+                    browser_profiles=target_profiles,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
+            else:
+                runner = DistributedAutomationRunner(
+                    browser_profiles=target_profiles,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
         else:  # Rotacion
             # Validar parámetros de rotación
             try:
@@ -710,21 +766,37 @@ class SendView(ttk.Frame):
                     self.browser_service.unlock_profile(p_name)
                 messagebox.showerror(MSG_ERROR, "El cooldown no puede ser negativo")
                 return
-            
-            runner = RotationAutomationRunner(
-                browser_profiles=target_profiles,
-                simultaneous_profiles=simultaneous,
-                messages_per_profile=msgs_per_profile,
-                profile_cooldown_minutes=cooldown_minutes,
-                config=config,
-                phone_numbers=phones,
-                user_data=user_data,
-                contact_data=contact_data,
-                campaign=campaign,
-                fallback_campaign=fallback_campaign,
-                progress_callback=update_ui,
-                completion_callback=on_complete
-            )
+
+            if is_sms:
+                runner = RotationSmsRunner(
+                    browser_profiles=target_profiles,
+                    simultaneous_profiles=simultaneous,
+                    messages_per_profile=msgs_per_profile,
+                    profile_cooldown_minutes=cooldown_minutes,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
+            else:
+                runner = RotationAutomationRunner(
+                    browser_profiles=target_profiles,
+                    simultaneous_profiles=simultaneous,
+                    messages_per_profile=msgs_per_profile,
+                    profile_cooldown_minutes=cooldown_minutes,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
         
         btn_cancel = ttk.Button(task_frame, text="Cancelar", command=lambda: self.cancel_task(runner, locked_profiles, task_active))
         btn_cancel.pack(side=tk.RIGHT, padx=5)

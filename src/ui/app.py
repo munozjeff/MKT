@@ -58,7 +58,8 @@ class App(tk.Tk):
         self.create_sidebar_button("Navegadores", self.show_browsers)
         self.create_sidebar_button("MONITOR", self.show_monitor, style="Info.TButton")
         ttk.Separator(self.sidebar, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5, pady=10)
-        self.create_sidebar_button("ENVIAR MENSAJES", self.show_send, style="Accent.TButton")
+        self.create_sidebar_button("Enviar WhatsApp", lambda: self.show_send("WhatsApp"), style="Accent.TButton")
+        self.create_sidebar_button("Enviar SMS", lambda: self.show_send("SMS (Google Messages)"), style="Accent.TButton")
         
         # Separador y botón de actualización al final
         ttk.Separator(self.sidebar, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5, pady=10, side=tk.BOTTOM)
@@ -108,9 +109,9 @@ class App(tk.Tk):
         self.clear_content()
         BrowsersView(self.content_area).pack(fill=tk.BOTH, expand=True)
         
-    def show_send(self):
+    def show_send(self, channel="WhatsApp"):
         self.clear_content()
-        SendView(self.content_area).pack(fill=tk.BOTH, expand=True)
+        SendView(self.content_area, channel=channel).pack(fill=tk.BOTH, expand=True)
     
     def show_monitor(self):
         self.clear_content()
