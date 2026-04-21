@@ -633,6 +633,7 @@ class SendView(ttk.Frame):
                     return
 
         # 3. Filtrar perfiles bloqueados para el canal seleccionado
+        is_sms = self._channel != "WhatsApp"
         all_profiles_objs = self.browser_service.get_all_profiles()
         block_tag = "BLOQUEADO_SMS" if is_sms else "BLOQUEADO"
         skipped_blocked = []
