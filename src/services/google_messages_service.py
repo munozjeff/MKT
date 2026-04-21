@@ -331,28 +331,44 @@ class GoogleMessagesService:
         except Exception:
             return False
 
-    def is_rcs_available(self) -> bool:
+
+    def is_rcs_available(self, timeout: float = 5.0, poll: float = 0.5) -> bool:
         """
         Verifica si el modo RCS está disponible para el número actual.
-        Google Messages muestra 'RCS' en el placeholder y aria-label del textarea
-        cuando el contacto soporta mensajería RCS.
+
+        Google Messages tarda unos segundos en negociar el protocolo RCS
+        después de abrir el chat. Por eso se sondea cada `poll` segundos
+        hasta que aparezca 'RCS' en el placeholder/aria-label del textarea,
+        o hasta agotar `timeout` segundos.
 
         Ejemplo placeholder RCS   : "Mensaje RCS de Movistar"
         Ejemplo placeholder no-RCS: "Mensaje"  /  "Enviar SMS a..."
 
+        Args:
+            timeout: Segundos máximos de espera (por defecto 5).
+            poll:    Intervalo entre sondeos en segundos (por defecto 0.5).
+
         Retorna True  → el número admite RCS.
-        Retorna False → solo SMS convencional, o no se pudo determinar.
+        Retorna False → solo SMS convencional tras agotar el tiempo de espera.
         """
-        try:
-            textarea = self.driver.find_element(
-                By.CSS_SELECTOR, 'textarea[data-e2e-message-input-box]'
-            )
-            placeholder = (textarea.get_attribute('placeholder') or '').upper()
-            aria_label  = (textarea.get_attribute('aria-label')  or '').upper()
-            return 'RCS' in placeholder or 'RCS' in aria_label
-        except Exception as e:
-            print(f"[GoogleMessages] Error verificando RCS: {e}")
-            return False
+        import time
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                textarea = self.driver.find_element(
+                    By.CSS_SELECTOR, 'textarea[data-e2e-message-input-box]'
+                )
+                placeholder = (textarea.get_attribute('placeholder') or '').upper()
+                aria_label  = (textarea.get_attribute('aria-label')  or '').upper()
+                if 'RCS' in placeholder or 'RCS' in aria_label:
+                    return True
+            except Exception:
+                pass   # textarea aún no visible, seguimos esperando
+            time.sleep(poll)
+
+        print(f"[GoogleMessages] No RCS detectado tras {timeout}s de espera")
+        return False
+
 
     def select_next_sim(self) -> bool:
         """
