@@ -1,8 +1,8 @@
 {
-    "version": "1.6.0",
+    "version": "1.6.1",
     "build": "20260421",
     "release_date": "2026-04-21",
-    "release_notes": "- Nueva función: Detección de QR en tiempo de ejecución SMS — perfil marcado BLOQUEADO_SMS automáticamente\n- Nueva función: Contador de errores consecutivos de chat (3 fallos = perfil descartado)\n- Nueva función: Verificación extra de textarea post-apertura de chat (verify_chat_opened)\n- Nueva función: Filtro 'Solo RCS' en vista de envío SMS — omite números sin modo RCS\n- Mejora: Vista Navegadores con columnas independientes WhatsApp / SMS para estado de bloqueo\n- Mejora: Bloqueo/Desbloqueo manual de WA y SMS desde botones y menú contextual\n- Mejora: Vista de envío oculta perfiles bloqueados según el canal seleccionado\n- Mejora: Ordenamiento numérico de perfiles por sufijo (_grupo_índice) en vista Navegadores\n- Mejora: Desbloq. automático de BLOQUEADO_SMS al re-autenticar vía 'Abrir Google Messages'",
+    "release_notes": "- Fix: Error al lanzar tarea en vista de envío (UnboundLocalError: is_sms)\n- Fix: Filtro de perfiles bloqueados por canal ahora funciona correctamente al iniciar envíos",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
