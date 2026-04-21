@@ -332,6 +332,93 @@ class GoogleMessagesService:
             return False
 
 
+    def inject_rcs_observer(self) -> bool:
+        """
+        Inyecta un MutationObserver JavaScript que captura CUALQUIER aparición
+        de 'RCS' en el placeholder/aria-label del textarea, incluyendo flashes
+        de milisegundos que el polling de Python jamás podría detectar.
+
+        DEBE llamarse ANTES de open_chat() para estar activo desde el primer
+        instante en que Google Messages carga el textarea del chat.
+        """
+        try:
+            self.driver.execute_script("""
+                // Resetear estado previo
+                window.__rcs_detected = false;
+                if (window.__rcs_observer) {
+                    try { window.__rcs_observer.disconnect(); } catch(e) {}
+                }
+
+                function _checkRcsInElement(el) {
+                    if (!el || !el.getAttribute) return;
+                    var ph = (el.getAttribute('placeholder') || '').toUpperCase();
+                    var al = (el.getAttribute('aria-label')  || '').toUpperCase();
+                    if (ph.indexOf('RCS') !== -1 || al.indexOf('RCS') !== -1) {
+                        window.__rcs_detected = true;
+                    }
+                }
+
+                window.__rcs_observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(m) {
+                        // Cambio de atributo directo en el textarea
+                        if (m.type === 'attributes' && m.target) {
+                            _checkRcsInElement(m.target);
+                        }
+                        // Nodos añadidos al DOM (textarea recién creado)
+                        if (m.type === 'childList') {
+                            m.addedNodes.forEach(function(node) {
+                                if (node.nodeType === 1) {
+                                    _checkRcsInElement(node);
+                                    if (node.querySelectorAll) {
+                                        node.querySelectorAll(
+                                            'textarea[data-e2e-message-input-box]'
+                                        ).forEach(_checkRcsInElement);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                    // También re-escanear el textarea actual por si cambió sin mutación
+                    document.querySelectorAll(
+                        'textarea[data-e2e-message-input-box]'
+                    ).forEach(_checkRcsInElement);
+                });
+
+                window.__rcs_observer.observe(document.body, {
+                    childList:       true,
+                    subtree:         true,
+                    attributes:      true,
+                    attributeFilter: ['placeholder', 'aria-label']
+                });
+            """)
+            return True
+        except Exception as e:
+            print(f"[GoogleMessages] Error inyectando RCS observer: {e}")
+            return False
+
+    def query_rcs_observer(self) -> bool:
+        """
+        Consulta si el MutationObserver detectó 'RCS' en cualquier momento
+        desde que fue inyectado (incluyendo flashes brevísimos).
+        Desconecta y limpia el observer al leerlo.
+
+        DEBE llamarse DESPUÉS de open_chat() / select_next_sim().
+        """
+        try:
+            detected = self.driver.execute_script("""
+                var result = window.__rcs_detected || false;
+                if (window.__rcs_observer) {
+                    try { window.__rcs_observer.disconnect(); } catch(e) {}
+                    window.__rcs_observer = null;
+                }
+                window.__rcs_detected = false;
+                return result;
+            """)
+            return bool(detected)
+        except Exception as e:
+            print(f"[GoogleMessages] Error consultando RCS observer: {e}")
+            return False
+
     def is_rcs_available(self, timeout: float = 5.0, poll: float = 0.5) -> bool:
         """
         Verifica si el modo RCS está disponible para el número actual.

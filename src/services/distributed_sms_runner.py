@@ -202,6 +202,10 @@ class DistributedSmsRunner:
                     self._update_progress(f"[{profile_name}] {phone}: Número no reconocido")
                     return False
 
+                # ── Observer RCS: inyectar ANTES de abrir el chat ──────────
+                if self.only_rcs:
+                    service.inject_rcs_observer()
+
                 # Abrir chat
                 if not service.open_chat():
                     print(f"[SMS-Dist][{profile_name}] ⚠️ open_chat() falló — volviendo")
@@ -215,9 +219,6 @@ class DistributedSmsRunner:
                     self.report_service.add_entry(phone, "Error abriendo chat")
                     self._update_progress(f"[{profile_name}] {phone}: Error abriendo chat")
                     return True
-
-                # ── CHECK RCS 1: inmediatamente al abrir (captura el flash inicial) ──
-                rcs_ok = service.is_rcs_available(timeout=2) if self.only_rcs else True
 
                 # Verificación extra: textarea accesible
                 if not service.verify_chat_opened():
@@ -236,11 +237,14 @@ class DistributedSmsRunner:
                 # Selección de SIM (round-robin)
                 service.select_next_sim()
 
-                # ── CHECK RCS 2: tras selección de SIM (fallback) ──
-                if self.only_rcs and not rcs_ok:
-                    rcs_ok = service.is_rcs_available(timeout=3)
+                # ── Verificar RCS: observer + polling de respaldo ────────────
+                if self.only_rcs:
+                    rcs_ok = service.query_rcs_observer()
+                    if not rcs_ok:
+                        rcs_ok = service.is_rcs_available(timeout=3)
+                else:
+                    rcs_ok = True
 
-                # Aplicar filtro Solo RCS
                 if not rcs_ok:
                     print(f"[SMS-Dist][{profile_name}] No RCS para {target_phone} — omitiendo")
                     try:

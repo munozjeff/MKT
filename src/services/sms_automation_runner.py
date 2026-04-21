@@ -191,6 +191,12 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Número no reconocido por Google Messages")
                     return False
 
+                # ── Observer RCS: inyectar ANTES de abrir el chat ────────────
+                # El MutationObserver JS captura cualquier flash del placeholder
+                # (incluso de milisegundos) que Python nunca podría detectar.
+                if self.only_rcs:
+                    service.inject_rcs_observer()
+
                 # Abrir chat
                 if not service.open_chat():
                     print(f"[SMS][{profile_name}] ⚠️ open_chat() falló para {target_phone} — volviendo")
@@ -203,9 +209,6 @@ class SmsAutomationRunner:
                         continue
                     self.report_service.add_entry(phone, "Error abriendo chat")
                     return True  # <- fallo de chat
-
-                # ── CHECK RCS 1: inmediatamente al abrir (captura el flash inicial) ──
-                rcs_ok = service.is_rcs_available(timeout=2) if self.only_rcs else True
 
                 # Verificación extra: ¿el textarea es accesible?
                 if not service.verify_chat_opened():
@@ -220,14 +223,18 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Error chat — textarea inaccesible")
                     return True  # <- fallo de chat
 
-                # Selección de SIM (round-robin, si hay más de una SIM disponible)
+                # Selección de SIM (round-robin)
                 service.select_next_sim()
 
-                # ── CHECK RCS 2: tras selección de SIM (por si el flash inicial se perdió) ──
-                if self.only_rcs and not rcs_ok:
-                    rcs_ok = service.is_rcs_available(timeout=3)
+                # ── Verificar RCS: observer + polling de respaldo ─────────────
+                if self.only_rcs:
+                    rcs_ok = service.query_rcs_observer()      # resultado del observer JS
+                    if not rcs_ok:
+                        # Fallback: el placeholder puede aún estar cargando
+                        rcs_ok = service.is_rcs_available(timeout=3)
+                else:
+                    rcs_ok = True
 
-                # Aplicar filtro Solo RCS
                 if not rcs_ok:
                     print(f"[SMS][{profile_name}] No RCS para {target_phone} — omitiendo")
                     try:
