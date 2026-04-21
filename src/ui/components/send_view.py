@@ -619,7 +619,35 @@ class SendView(ttk.Frame):
                     messagebox.showerror(MSG_ERROR, "Campaña no encontrada")
                     return
 
-        # 3. Bloquear perfiles
+        # 3. Filtrar perfiles bloqueados para el canal seleccionado
+        all_profiles_objs = self.browser_service.get_all_profiles()
+        block_tag = "BLOQUEADO_SMS" if is_sms else "BLOQUEADO"
+        skipped_blocked = []
+        filtered_profiles = []
+        for p_name in selected_profiles:
+            profile_obj = next((p for p in all_profiles_objs if p.name == p_name), None)
+            if profile_obj:
+                upper_tags = [t.upper() for t in profile_obj.tags]
+                if block_tag in upper_tags:
+                    skipped_blocked.append(p_name)
+                else:
+                    filtered_profiles.append(p_name)
+            else:
+                filtered_profiles.append(p_name)
+
+        if skipped_blocked:
+            ch_label = "SMS (BLOQUEADO_SMS)" if is_sms else "WhatsApp (BLOQUEADO)"
+            msg = (f"Los siguientes perfiles están bloqueados para {ch_label} y serán omitidos:\n\n"
+                   + "\n".join(f"  • {n}" for n in skipped_blocked)
+                   + "\n\n¿Desea continuar con los perfiles disponibles?")
+            if not messagebox.askyesno("Perfiles Bloqueados", msg):
+                return
+            if not filtered_profiles:
+                messagebox.showerror(MSG_ERROR, "No quedan perfiles disponibles para el canal seleccionado.")
+                return
+            selected_profiles = filtered_profiles
+
+        # 4. Bloquear perfiles
         locked_profiles = []
         for p_name in selected_profiles:
             if self.browser_service.lock_profile(p_name):
@@ -635,8 +663,7 @@ class SendView(ttk.Frame):
             self.refresh_profiles()
             return
             
-        # 4. Iniciar Runner
-        all_profiles_objs = self.browser_service.get_all_profiles()
+        # 5. Iniciar Runner
         target_profiles = [p for p in all_profiles_objs if p.name in locked_profiles]
         
         # UI Card - Cada tarea en su propio frame

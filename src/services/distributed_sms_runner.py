@@ -38,6 +38,7 @@ class DistributedSmsRunner:
         self.total_messages = len(phone_numbers)
         self.processed_count = 0
         self.count_lock = threading.Lock()
+        self.only_rcs = config.get("only_rcs", False)
 
         self.active_services = []
         self.active_services_lock = threading.Lock()
@@ -231,6 +232,18 @@ class DistributedSmsRunner:
 
                 # Chat abierto correctamente
                 is_chat_failure = False
+
+                # ── Filtro Solo RCS ──────────────────────────────────────
+                if self.only_rcs and not service.is_rcs_available():
+                    print(f"[SMS-Dist][{profile_name}] No RCS para {target_phone} — omitiendo")
+                    try:
+                        service.go_back()
+                    except Exception:
+                        pass
+                    self.report_service.add_entry(phone, "No RCS — omitido")
+                    self._update_progress(f"[{profile_name}] {phone}: No RCS — omitido")
+                    return False
+
                 service.send_text_message(message_text)
                 service.send_message_simple()
                 delivery = service.check_delivery_status(timeout=6)
