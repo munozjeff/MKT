@@ -1,8 +1,8 @@
 {
-    "version": "1.6.1",
+    "version": "1.6.2",
     "build": "20260421",
     "release_date": "2026-04-21",
-    "release_notes": "- Fix: Error al lanzar tarea en vista de envío (UnboundLocalError: is_sms)\n- Fix: Filtro de perfiles bloqueados por canal ahora funciona correctamente al iniciar envíos",
+    "release_notes": "- Fix: Detección de RCS ahora espera hasta 5 segundos con sondeo cada 0.5s antes de descartar el número (evita falsos negativos por carga lenta)",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
