@@ -621,10 +621,9 @@ class GoogleMessagesService:
     def send_message_simple(self) -> bool:
         """
         Envía el mensaje presionando Enter en el textarea.
-        Detecta inmediatamente si aparece 'span.failed' (No se envió)
-        en los 4 segundos posteriores al Enter, antes de que la página
-        navegue. El resultado se guarda en self._last_delivery_status
-        para que check_delivery_status() lo consuma.
+
+        Solo hace un chequeo rápido (2 s) de errores inmediatos.
+        La espera de confirmación completa la hace check_delivery_status().
         """
         self._last_delivery_status = None
 
@@ -635,38 +634,28 @@ class GoogleMessagesService:
                 ))
             )
 
-            url_before = self.driver.current_url
-
             # Enviar con Enter
             textarea.send_keys(Keys.RETURN)
 
-            # Ventana crítica: 4 segundos para detectar fallo o navegación exitosa
-            deadline = time.time() + 4
+            # Ventana rápida (2 s) para detectar errores inmediatos
+            deadline = time.time() + 2
             while time.time() < deadline:
                 try:
-                    # 1. Verificar fallo primero (aparece rápido en la conversación)
-                    failed_els = self.driver.find_elements(By.CSS_SELECTOR, 'span.failed')
+                    failed_els = self.driver.find_elements(
+                        By.CSS_SELECTOR, 'span.failed'
+                    )
                     for el in failed_els:
                         try:
                             if el.is_displayed():
                                 self._last_delivery_status = "Error al enviar"
-                                print("[GoogleMessages] Detectado: 'No se envió'")
-                                return True  # completado (con fallo detectado)
+                                print("[GoogleMessages] ❌ Error inmediato detectado tras envío")
+                                return True
                         except Exception:
                             pass
-
-                    # 2. Verificar si ya navegó fuera (normalmente = éxito)
-                    if self.driver.current_url != url_before:
-                        self._last_delivery_status = "Enviado"
-                        return True
-
                 except Exception:
                     pass
+                time.sleep(0.2)
 
-                time.sleep(0.3)
-
-            # Timeout: optimistamente éxito
-            self._last_delivery_status = "Enviado"
             return True
 
         except Exception as e:
@@ -675,50 +664,71 @@ class GoogleMessagesService:
             return False
 
 
-    def check_delivery_status(self, timeout: int = 6) -> str:
+    def check_delivery_status(self, timeout: int = 10) -> str:
         """
-        Retorna el estado de entrega del último mensaje.
-        Usa el resultado ya detectado en send_message_simple() como
-        fuente primaria (detectado antes de que la página navegue).
-        Si no hay resultado previo, intenta leer el estado desde el DOM.
+        Espera la confirmación de entrega tras send_message_simple().
+
+        Sondea hasta `timeout` segundos buscando:
+          • [data-e2e-delivered-status-icon] / .delivered-icon
+              → "Entregado ✓✓"  (chulitos RCS)
+          • span.failed
+              → "Error al enviar"  (no se envió)
+
+        Si ninguno aparece antes del timeout devuelve "Enviado"
+        (el mensaje partió pero la confirmación de entrega tardó más).
+
+        Selectores basados en el DOM real de Google Messages:
+          Éxito : <mws-icon data-e2e-delivered-status-icon class="delivered-icon">
+          Error : <span class="failed">No se envió; haz clic para volver a intentarlo</span>
         """
-        # Prioridad 1: resultado detectado en send_message_simple()
+        # Prioridad 1: error ya detectado en send_message_simple()
         if self._last_delivery_status is not None:
             status = self._last_delivery_status
-            self._last_delivery_status = None  # limpiar para el próximo uso
+            self._last_delivery_status = None
             return status
 
-        # Prioridad 2: verificar DOM si todavía estamos en la conversación
         try:
-            current_url = self.driver.current_url
-            in_conversation = (
-                '/conversations/' in current_url and
-                'conversations/new' not in current_url
-            )
-            if not in_conversation:
-                return "Enviado"
-
             deadline = time.time() + timeout
             while time.time() < deadline:
-                if self.driver.current_url != current_url:
-                    return "Enviado"
+                try:
+                    # ── Verificar error ────────────────────────────────────
+                    failed_els = self.driver.find_elements(
+                        By.CSS_SELECTOR, 'span.failed'
+                    )
+                    for el in failed_els:
+                        try:
+                            if el.is_displayed():
+                                print("[GoogleMessages] ❌ No se envió (span.failed visible)")
+                                return "Error al enviar"
+                        except Exception:
+                            pass
 
-                failed_els = self.driver.find_elements(By.CSS_SELECTOR, 'span.failed')
-                for el in failed_els:
-                    try:
-                        if el.is_displayed():
-                            return "Error al enviar"
-                    except Exception:
-                        pass
+                    # ── Verificar entrega (chulitos dobles) ────────────────
+                    # Selector 1: atributo data-e2e
+                    delivered = self.driver.find_elements(
+                        By.CSS_SELECTOR, '[data-e2e-delivered-status-icon]'
+                    )
+                    # Selector 2: clase CSS como respaldo
+                    if not delivered:
+                        delivered = self.driver.find_elements(
+                            By.CSS_SELECTOR, 'mws-icon.delivered-icon'
+                        )
 
-                delivered = self.driver.find_elements(
-                    By.CSS_SELECTOR, '[data-e2e-delivered-status-icon]'
-                )
-                if delivered:
-                    return "Entregado"
+                    if delivered:
+                        try:
+                            if delivered[-1].is_displayed():
+                                print("[GoogleMessages] ✅ Mensaje entregado (chulitos detectados)")
+                                return "Entregado ✓✓"
+                        except Exception:
+                            pass
+
+                except Exception:
+                    pass
 
                 time.sleep(0.4)
 
+            # Timeout: partió pero sin confirmación de entrega aún
+            print(f"[GoogleMessages] ⏱ Timeout {timeout}s — mensaje enviado sin confirmar entrega")
             return "Enviado"
 
         except Exception as e:

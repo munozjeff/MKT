@@ -405,7 +405,7 @@ class RotationSmsRunner:
                 is_chat_failure = False
                 service.send_text_message(message_text)
                 service.send_message_simple()
-                delivery = service.check_delivery_status(timeout=6)
+                delivery = service.check_delivery_status(timeout=10)
                 status = delivery if attempt_index == 0 else f"{delivery} (contacto {attempt_index + 1})"
                 self.report_service.add_entry(phone, status)
                 self._update_progress(f"[{profile_name}] {phone}: {status}")

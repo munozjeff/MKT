@@ -252,7 +252,7 @@ class SmsAutomationRunner:
                     return False
 
                 service.send_message_simple()
-                delivery_status = service.check_delivery_status(timeout=6)
+                delivery_status = service.check_delivery_status(timeout=10)
                 status_msg = delivery_status
                 if attempt_index > 0:
                     status_msg = f"{delivery_status} (contacto {attempt_index + 1})"
