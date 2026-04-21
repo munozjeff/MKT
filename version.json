@@ -1,8 +1,8 @@
 {
-    "version": "1.6.2",
+    "version": "1.6.3",
     "build": "20260421",
     "release_date": "2026-04-21",
-    "release_notes": "- Fix: Detección de RCS ahora espera hasta 5 segundos con sondeo cada 0.5s antes de descartar el número (evita falsos negativos por carga lenta)",
+    "release_notes": "- Fix: Detección RCS en 2 fases — check inmediato al abrir el chat (captura el flash inicial) + check tras selección de SIM como respaldo\n- Fix: select_next_sim() ahora se llama explícitamente antes del envío en los 3 modos SMS",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
