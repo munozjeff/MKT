@@ -362,6 +362,9 @@ class RotationSmsRunner:
                     self._update_progress(f"[{profile_name}] {phone}: Error abriendo chat")
                     return True
 
+                # ── CHECK RCS 1: inmediatamente al abrir (captura el flash inicial) ──
+                rcs_ok = service.is_rcs_available(timeout=2) if self.only_rcs else True
+
                 # Verificación extra: textarea accesible
                 if not service.verify_chat_opened():
                     print(f"[SMS-Rotación][{profile_name}] ⚠️ Textarea no encontrado — volviendo al inicio")
@@ -376,11 +379,15 @@ class RotationSmsRunner:
                     self._update_progress(f"[{profile_name}] {phone}: Error chat — textarea inaccesible")
                     return True
 
-                # Chat abierto correctamente
-                is_chat_failure = False
+                # Selección de SIM (round-robin)
+                service.select_next_sim()
 
-                # ── Filtro Solo RCS ──────────────────────────────────────
-                if self.only_rcs and not service.is_rcs_available():
+                # ── CHECK RCS 2: tras selección de SIM (fallback) ──
+                if self.only_rcs and not rcs_ok:
+                    rcs_ok = service.is_rcs_available(timeout=3)
+
+                # Aplicar filtro Solo RCS
+                if not rcs_ok:
                     print(f"[SMS-Rotación][{profile_name}] No RCS para {target_phone} — omitiendo")
                     try:
                         service.go_back()
@@ -390,6 +397,8 @@ class RotationSmsRunner:
                     self._update_progress(f"[{profile_name}] {phone}: No RCS — omitido")
                     return False
 
+                # Chat abierto y RCS validado — enviar
+                is_chat_failure = False
                 service.send_text_message(message_text)
                 service.send_message_simple()
                 delivery = service.check_delivery_status(timeout=6)

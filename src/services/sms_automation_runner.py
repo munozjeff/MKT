@@ -204,6 +204,9 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Error abriendo chat")
                     return True  # <- fallo de chat
 
+                # ── CHECK RCS 1: inmediatamente al abrir (captura el flash inicial) ──
+                rcs_ok = service.is_rcs_available(timeout=2) if self.only_rcs else True
+
                 # Verificación extra: ¿el textarea es accesible?
                 if not service.verify_chat_opened():
                     print(f"[SMS][{profile_name}] ⚠️ Textarea no encontrado tras open_chat() — volviendo al inicio")
@@ -217,17 +220,24 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Error chat — textarea inaccesible")
                     return True  # <- fallo de chat
 
-                # ── Filtro Solo RCS ──────────────────────────────────────
-                if self.only_rcs and not service.is_rcs_available():
+                # Selección de SIM (round-robin, si hay más de una SIM disponible)
+                service.select_next_sim()
+
+                # ── CHECK RCS 2: tras selección de SIM (por si el flash inicial se perdió) ──
+                if self.only_rcs and not rcs_ok:
+                    rcs_ok = service.is_rcs_available(timeout=3)
+
+                # Aplicar filtro Solo RCS
+                if not rcs_ok:
                     print(f"[SMS][{profile_name}] No RCS para {target_phone} — omitiendo")
                     try:
                         service.go_back()
                     except Exception:
                         pass
                     self.report_service.add_entry(phone, "No RCS — omitido")
-                    return False  # no es fallo de chat, simplemente omitido
+                    return False  # no es fallo de chat
 
-                # Chat abierto correctamente
+                # Chat abierto y RCS validado — enviar
                 is_chat_failure = False
 
                 if not service.send_text_message(message_text):
