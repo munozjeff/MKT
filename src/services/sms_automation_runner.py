@@ -31,6 +31,7 @@ class SmsAutomationRunner:
         self.stop_event = threading.Event()
         self.sms_service = GoogleMessagesService()
         self.report_service = ReportService()
+        self.only_rcs = config.get("only_rcs", False)
 
     def start(self):
         thread = threading.Thread(target=self._run)
@@ -215,6 +216,16 @@ class SmsAutomationRunner:
                         continue
                     self.report_service.add_entry(phone, "Error chat — textarea inaccesible")
                     return True  # <- fallo de chat
+
+                # ── Filtro Solo RCS ──────────────────────────────────────
+                if self.only_rcs and not service.is_rcs_available():
+                    print(f"[SMS][{profile_name}] No RCS para {target_phone} — omitiendo")
+                    try:
+                        service.go_back()
+                    except Exception:
+                        pass
+                    self.report_service.add_entry(phone, "No RCS — omitido")
+                    return False  # no es fallo de chat, simplemente omitido
 
                 # Chat abierto correctamente
                 is_chat_failure = False

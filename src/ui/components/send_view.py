@@ -230,6 +230,15 @@ class SendView(ttk.Frame):
         self.ent_profile_cooldown.insert(0, "60")  # Default 1 hora
         self.ent_profile_cooldown.grid(row=2, column=1, padx=5, pady=2)
         ttk.Label(self.frame_rotation_config, text="(tiempo antes de reutilizar perfil)", font=("Arial", 8)).grid(row=2, column=2, padx=2, pady=2, sticky=tk.W)
+
+        # ── Solo RCS (solo aplica a canal SMS) ──────────────────────────────
+        self.var_only_rcs = tk.BooleanVar(value=False)
+        self.chk_only_rcs = ttk.Checkbutton(
+            right_col,
+            text="📡 Solo RCS (omitir SMS convencional)",
+            variable=self.var_only_rcs
+        )
+        # Se muestra u oculta en on_channel_change()
         
         # === BOTÓN LANZAR (Parte inferior de config_frame, fuera de las columnas) ===
         bottom_frame = ttk.Frame(config_frame)
@@ -375,7 +384,8 @@ class SendView(ttk.Frame):
 
     def on_channel_change(self):
         """Muestra u oculta la sección Monitor según el canal seleccionado.
-        El monitor solo aplica a WhatsApp, no a Google Messages."""
+        El monitor solo aplica a WhatsApp, no a Google Messages.
+        El checkbox 'Solo RCS' solo aplica a SMS."""
         is_whatsapp = self.var_channel.get() == "WhatsApp"
         monitor_state = "normal" if is_whatsapp else "disabled"
 
@@ -387,11 +397,15 @@ class SendView(ttk.Frame):
             self.var_monitor_enabled.set(False)
             self.on_monitor_toggle()  # propaga el disable a los campos hijo
 
-        # Indicador visual en la etiqueta
+        # Indicador visual en la etiqueta del monitor
         if is_whatsapp:
             self.chk_monitor.config(text="Activar Monitor")
+            # Ocultar Solo RCS en WhatsApp
+            self.chk_only_rcs.grid_forget()
         else:
             self.chk_monitor.config(text="Activar Monitor (solo WhatsApp)")
+            # Mostrar Solo RCS en modo SMS
+            self.chk_only_rcs.grid(row=5, column=0, columnspan=3, padx=5, pady=(8, 2), sticky=tk.W)
             
     def load_excel_file(self):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
@@ -510,6 +524,7 @@ class SendView(ttk.Frame):
             "pause": self.ent_pause.get(),
             "message_type": self.combo_msg_type.get(),
             "campaign_type": self.combo_camp_type.get(),
+            "only_rcs": self.var_only_rcs.get() if not (self.var_channel.get() == "WhatsApp") else False,
         }
         
         # Monitor Configuration

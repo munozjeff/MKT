@@ -331,6 +331,29 @@ class GoogleMessagesService:
         except Exception:
             return False
 
+    def is_rcs_available(self) -> bool:
+        """
+        Verifica si el modo RCS está disponible para el número actual.
+        Google Messages muestra 'RCS' en el placeholder y aria-label del textarea
+        cuando el contacto soporta mensajería RCS.
+
+        Ejemplo placeholder RCS   : "Mensaje RCS de Movistar"
+        Ejemplo placeholder no-RCS: "Mensaje"  /  "Enviar SMS a..."
+
+        Retorna True  → el número admite RCS.
+        Retorna False → solo SMS convencional, o no se pudo determinar.
+        """
+        try:
+            textarea = self.driver.find_element(
+                By.CSS_SELECTOR, 'textarea[data-e2e-message-input-box]'
+            )
+            placeholder = (textarea.get_attribute('placeholder') or '').upper()
+            aria_label  = (textarea.get_attribute('aria-label')  or '').upper()
+            return 'RCS' in placeholder or 'RCS' in aria_label
+        except Exception as e:
+            print(f"[GoogleMessages] Error verificando RCS: {e}")
+            return False
+
     def select_next_sim(self) -> bool:
         """
         Detecta si hay un selector de SIM en la pantalla de conversación.

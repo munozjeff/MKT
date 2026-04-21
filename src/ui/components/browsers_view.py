@@ -35,22 +35,27 @@ class BrowsersView(ttk.Frame):
         list_frame = ttk.LabelFrame(main_frame, text="Perfiles Disponibles")
         list_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PADDING_MEDIUM))
         
-        # Tabla de perfiles
-        columns = ("Nombre", "Estado", "Etiquetas", "Ruta")
+        # Tabla de perfiles — columnas independientes para Estado WA y Estado SMS
+        columns = ("Nombre", "Estado", "WA", "SMS", "Etiquetas", "Ruta")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings")
-        self.tree.heading("Nombre", text="Nombre del Perfil")
-        self.tree.heading("Estado", text="Estado")
-        self.tree.heading("Etiquetas", text="Etiquetas")
-        self.tree.heading("Ruta", text="Ruta de Datos")
-        self.tree.column("Nombre", width=150)
-        self.tree.column("Estado", width=120)
-        self.tree.column("Etiquetas", width=150)
-        self.tree.column("Ruta", width=250)
+        self.tree.heading("Nombre",   text="Nombre del Perfil")
+        self.tree.heading("Estado",   text="Uso")
+        self.tree.heading("WA",       text="WhatsApp")
+        self.tree.heading("SMS",      text="SMS")
+        self.tree.heading("Etiquetas",text="Etiquetas")
+        self.tree.heading("Ruta",     text="Ruta de Datos")
+        self.tree.column("Nombre",    width=145)
+        self.tree.column("Estado",    width=70)
+        self.tree.column("WA",        width=100)
+        self.tree.column("SMS",       width=100)
+        self.tree.column("Etiquetas", width=120)
+        self.tree.column("Ruta",      width=200)
 
-        # Estilos de fila por estado
-        self.tree.tag_configure("bloq_sms", background="#FFD6CC", foreground="#8B0000")
-        self.tree.tag_configure("bloqueado", background="#FFF3CC", foreground="#7A4F00")
-        self.tree.tag_configure("disponible", background="", foreground="")
+        # Estilos de fila
+        self.tree.tag_configure("bloq_both",  background="#FFB3B3", foreground="#5C0000")
+        self.tree.tag_configure("bloq_sms",   background="#FFD6CC", foreground="#8B0000")
+        self.tree.tag_configure("bloqueado",  background="#FFF3CC", foreground="#7A4F00")
+        self.tree.tag_configure("disponible", background="",        foreground="")
         
         # Scrollbar
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -65,6 +70,10 @@ class BrowsersView(ttk.Frame):
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Abrir Navegador (WhatsApp)", command=self.open_profile)
         self.context_menu.add_command(label="Abrir Navegador (Google Messages)", command=self.open_profile_google_messages)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="🔒 Alternar Bloqueo WhatsApp", command=self.toggle_wa_blocked)
+        self.context_menu.add_command(label="⚠️ Alternar Bloqueo SMS",       command=self.toggle_sms_blocked)
+        self.context_menu.add_separator()
         self.context_menu.add_command(label="Eliminar Perfil", command=self.delete_profile)
         
         self.tree.bind("<Button-3>", self.show_context_menu)
@@ -98,9 +107,22 @@ class BrowsersView(ttk.Frame):
         
         btn_delete = ttk.Button(action_frame, text="Eliminar Perfil", command=self.delete_profile)
         btn_delete.pack(fill=tk.X, pady=5)
-        
+
+        ttk.Separator(action_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=8)
+
+        # Bloqueo manual
+        ttk.Label(action_frame, text="Bloqueo manual:", font=("Arial", 8, "bold")).pack(anchor=tk.W)
+        btn_toggle_wa = ttk.Button(action_frame, text="🔒 Alternar Bloqueo WA",
+                                   command=self.toggle_wa_blocked)
+        btn_toggle_wa.pack(fill=tk.X, pady=2)
+        btn_toggle_sms = ttk.Button(action_frame, text="⚠️ Alternar Bloqueo SMS",
+                                    command=self.toggle_sms_blocked)
+        btn_toggle_sms.pack(fill=tk.X, pady=2)
+
+        ttk.Separator(action_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=8)
+
         btn_refresh = ttk.Button(action_frame, text="Actualizar Lista", command=self.load_profiles)
-        btn_refresh.pack(fill=tk.X, pady=(20, 5))
+        btn_refresh.pack(fill=tk.X, pady=(0, 5))
         
         btn_export = ttk.Button(action_frame, text="Exportar Bloqueados", command=self.export_blocked_profiles)
         btn_export.pack(fill=tk.X, pady=5)
@@ -135,8 +157,7 @@ class BrowsersView(ttk.Frame):
         return sorted(profiles, key=sort_key)
 
     def load_profiles(self):
-        """Carga los perfiles en la tabla ordenados por grupos de etiquetas."""
-        # Limpiar tabla
+        """Carga los perfiles en la tabla con columnas independientes de estado WA y SMS."""
         for item in self.tree.get_children():
             self.tree.delete(item)
             
@@ -144,39 +165,53 @@ class BrowsersView(ttk.Frame):
         profiles_sorted = self._sort_profiles_by_tags(profiles)
         
         for profile in profiles_sorted:
-            is_active = self.browser_service.is_profile_active(profile.name)
+            is_active  = self.browser_service.is_profile_active(profile.name)
             upper_tags = [t.upper() for t in profile.tags]
 
-            # Determinar estado y estilo de fila
-            if "BLOQUEADO_SMS" in upper_tags:
-                status = "⚠️ BLOQ-SMS"
+            is_wa_blocked  = "BLOQUEADO"     in upper_tags
+            is_sms_blocked = "BLOQUEADO_SMS" in upper_tags
+
+            # Columna "Uso" (solo indica si el perfil está ocupado por una tarea en curso)
+            uso = "Ocupado" if is_active else "Libre"
+
+            # Columna WhatsApp
+            wa_status = "🔒 Bloqueado" if is_wa_blocked else "✅ Disponible"
+
+            # Columna SMS
+            sms_status = "⚠️ Bloqueado" if is_sms_blocked else "✅ Disponible"
+
+            # Etiquetas: excluir las que ya tienen columna propia
+            display_tags = [
+                t for t in profile.tags
+                if t.upper() not in ("BLOQUEADO", "BLOQUEADO_SMS")
+            ]
+            tags_str = ", ".join(sorted(display_tags)) if display_tags else ""
+
+            short_path = "..." + profile.path[-28:] if len(profile.path) > 28 else profile.path
+
+            # Color de fila según estado de bloqueo
+            if is_wa_blocked and is_sms_blocked:
+                row_tag = "bloq_both"
+            elif is_sms_blocked:
                 row_tag = "bloq_sms"
-            elif "BLOQUEADO" in upper_tags:
-                status = "🔒 Bloqueado"
+            elif is_wa_blocked:
                 row_tag = "bloqueado"
-            elif is_active:
-                status = "Ocupado"
-                row_tag = "disponible"
             else:
-                status = "Disponible"
                 row_tag = "disponible"
-            
-            # Formato de etiquetas (ordenadas alfabéticamente para consistencia visual)
-            tags_str = ", ".join(sorted(profile.tags)) if profile.tags else ""
-            
-            # Solo mostrar parte final de la ruta para que no sea tan larga
-            short_path = "..." + profile.path[-30:] if len(profile.path) > 30 else profile.path
-            
-            self.tree.insert("", "end", values=(profile.name, status, tags_str, short_path),
+
+            self.tree.insert("", "end",
+                             values=(profile.name, uso, wa_status, sms_status, tags_str, short_path),
                              tags=(row_tag,))
             
-        # Calcular estadísticas
+        # Estadísticas (solo etiquetas que no sean de bloqueo)
         tag_counts = {}
+        SKIP = {"BLOQUEADO", "BLOQUEADO_SMS"}
         for profile in profiles:
-            if not profile.tags:
+            visible = [t for t in profile.tags if t.upper() not in SKIP]
+            if not visible:
                 tag_counts["(Sin etiqueta)"] = tag_counts.get("(Sin etiqueta)", 0) + 1
             else:
-                for tag in profile.tags:
+                for tag in visible:
                     tag_counts[tag] = tag_counts.get(tag, 0) + 1
         
         self.update_stats(tag_counts)
@@ -187,6 +222,46 @@ class BrowsersView(ttk.Frame):
         if item:
             self.tree.selection_set(item)
             self.context_menu.post(event.x_root, event.y_root)
+
+    def toggle_wa_blocked(self):
+        """Alterna manualmente el bloqueo de WhatsApp para el/los perfiles seleccionados."""
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showwarning(MSG_WARNING, "Seleccione al menos un perfil")
+            return
+        all_profiles = self.browser_service.get_all_profiles()
+        for item_id in selected_items:
+            name = self.tree.item(item_id)["values"][0]
+            profile = next((p for p in all_profiles if p.name == name), None)
+            if not profile:
+                continue
+            if "BLOQUEADO" in [t.upper() for t in profile.tags]:
+                profile.remove_tag("BLOQUEADO")
+                print(f"[Navegadores] {name}: BLOQUEADO WA eliminado manualmente")
+            else:
+                profile.add_tag("BLOQUEADO")
+                print(f"[Navegadores] {name}: BLOQUEADO WA agregado manualmente")
+        self.load_profiles()
+
+    def toggle_sms_blocked(self):
+        """Alterna manualmente el bloqueo de SMS para el/los perfiles seleccionados."""
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showwarning(MSG_WARNING, "Seleccione al menos un perfil")
+            return
+        all_profiles = self.browser_service.get_all_profiles()
+        for item_id in selected_items:
+            name = self.tree.item(item_id)["values"][0]
+            profile = next((p for p in all_profiles if p.name == name), None)
+            if not profile:
+                continue
+            if "BLOQUEADO_SMS" in [t.upper() for t in profile.tags]:
+                profile.remove_tag("BLOQUEADO_SMS")
+                print(f"[Navegadores] {name}: BLOQUEADO_SMS eliminado manualmente")
+            else:
+                profile.add_tag("BLOQUEADO_SMS")
+                print(f"[Navegadores] {name}: BLOQUEADO_SMS agregado manualmente")
+        self.load_profiles()
 
     def create_profile(self):
         """Crea un nuevo perfil. Si el nombre está vacío genera uno temporal."""
