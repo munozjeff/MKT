@@ -1,15 +1,13 @@
 """
 Runner Individual de automatización SMS via Google Messages.
-Equivalente a AutomationRunner pero para Google Messages.
-No incluye lógica de monitor (no aplica a SMS).
 """
 import time
-import random
 import threading
-from datetime import datetime
 from .google_messages_service import GoogleMessagesService
 from .report_service import ReportService
 from ..utils.message_templates import generate_random_message, replace_variables
+
+MAX_CONSECUTIVE_CHAT_ERRORS = 3
 
 
 class SmsAutomationRunner:
@@ -28,7 +26,6 @@ class SmsAutomationRunner:
         self.fallback_campaign = fallback_campaign
         self.progress_callback = progress_callback
         self.completion_callback = completion_callback
-        # Callback opcional: se llama con (profile_name) cuando se detecta QR y el perfil es bloqueado
         self.profile_blocked_callback = profile_blocked_callback
 
         self.stop_event = threading.Event()
@@ -36,23 +33,19 @@ class SmsAutomationRunner:
         self.report_service = ReportService()
 
     def start(self):
-        """Inicia la ejecución en un hilo."""
         thread = threading.Thread(target=self._run)
         thread.daemon = True
         thread.start()
 
     def stop(self):
-        """Detiene la ejecución."""
         self.stop_event.set()
 
-    def _mark_profile_qr_blocked(self):
-        """Marca el perfil como BLOQUEADO_SMS al detectar QR en ejecución."""
+    def _mark_profile_blocked(self, reason="BLOQUEADO_SMS"):
         try:
-            self.profile.add_tag("BLOQUEADO_SMS")
-            print(f"[SMS][{self.profile.name}] Perfil marcado como BLOQUEADO_SMS (QR detectado en ejecución)")
+            self.profile.add_tag(reason)
+            print(f"[SMS][{self.profile.name}] Perfil marcado como {reason}")
         except Exception as e:
-            print(f"[SMS][{self.profile.name}] Error marcando perfil como bloqueado: {e}")
-
+            print(f"[SMS][{self.profile.name}] Error marcando perfil: {e}")
         if self.profile_blocked_callback:
             try:
                 self.profile_blocked_callback(self.profile.name)
@@ -60,22 +53,17 @@ class SmsAutomationRunner:
                 pass
 
     def _run(self):
-        """Lógica principal del loop de envío."""
         try:
-            # 1. Inicializar navegador
             if self.progress_callback:
                 self.progress_callback(0, len(self.phone_numbers), "Iniciando Google Messages...")
 
             if not self.sms_service.initialize_driver(self.profile.path):
                 raise Exception("Fallo al iniciar navegador para Google Messages")
 
-            # 2. Esperar autenticación QR si es necesario
             if self.progress_callback:
                 self.progress_callback(0, len(self.phone_numbers), "Esperando autenticación QR...")
 
             time.sleep(3)
-
-            # Si aparece QR, esperar hasta 5 minutos para que el usuario lo escanee
             max_wait = 300
             start_wait = time.time()
             while not self.stop_event.is_set():
@@ -95,121 +83,47 @@ class SmsAutomationRunner:
             if self.progress_callback:
                 self.progress_callback(0, len(self.phone_numbers), "✅ Autenticado. Iniciando envíos...")
 
-            # 3. Bucle de envío
             total = len(self.phone_numbers)
             interval = int(self.config.get("interval", 20))
             pause_after = int(self.config.get("pause", 0))
+            consecutive_chat_errors = 0
 
             for index, phone in enumerate(self.phone_numbers):
                 if self.stop_event.is_set():
                     break
 
-                # ── Verificar QR antes de cada envío ──────────────────────────────
+                # Verificar QR en tiempo de ejecución
                 if self.sms_service.is_qr_visible():
-                    print(f"[SMS][{self.profile.name}] ⚠️ QR detectado durante ejecución — bloqueando perfil")
-                    self._mark_profile_qr_blocked()
+                    print(f"[SMS][{self.profile.name}] ⚠️ QR detectado — bloqueando perfil")
+                    self._mark_profile_blocked("BLOQUEADO_SMS")
                     self.report_service.add_entry(phone, "QR detectado — envío cancelado")
-                    # Reportar restantes como cancelados
-                    for pending_phone in self.phone_numbers[index + 1:]:
-                        self.report_service.add_entry(pending_phone, "Cancelado (QR detectado en perfil)")
+                    for p in self.phone_numbers[index + 1:]:
+                        self.report_service.add_entry(p, "Cancelado (QR detectado en perfil)")
                     if self.progress_callback:
-                        self.progress_callback(
-                            index, total,
-                            f"⚠️ QR detectado — perfil [{self.profile.name}] bloqueado para SMS"
-                        )
-                    return  # finalizar; el finally cierra el navegador y guarda el reporte
+                        self.progress_callback(index, total,
+                            f"⚠️ QR detectado — perfil [{self.profile.name}] bloqueado para SMS")
+                    return
 
                 if self.progress_callback:
                     self.progress_callback(index, total, f"Enviando SMS a {phone}...")
 
-                # Construir lista de números a intentar
-                phone_list = [phone]
-                contacts = self.contact_data.get(phone, {})
-                if contacts:
-                    import numpy as np
-                    valid = [v for v in contacts.values()
-                             if v is not None and not (isinstance(v, float) and np.isnan(v))]
-                    phone_list.extend(valid)
+                chat_failed = self._process_single_message(self.sms_service, phone, self.profile.name)
 
-                sent_successfully = False
+                if chat_failed:
+                    consecutive_chat_errors += 1
+                    print(f"[SMS][{self.profile.name}] ⚠️ Error de chat: {consecutive_chat_errors}/{MAX_CONSECUTIVE_CHAT_ERRORS}")
+                    if consecutive_chat_errors >= MAX_CONSECUTIVE_CHAT_ERRORS:
+                        print(f"[SMS][{self.profile.name}] ❌ {MAX_CONSECUTIVE_CHAT_ERRORS} errores consecutivos de chat — descartando perfil")
+                        self._mark_profile_blocked("BLOQUEADO_SMS")
+                        for p in self.phone_numbers[index + 1:]:
+                            self.report_service.add_entry(p, "Cancelado (perfil descartado por errores de chat)")
+                        if self.progress_callback:
+                            self.progress_callback(index + 1, total,
+                                f"❌ [{self.profile.name}] Descartado — 3 errores consecutivos de chat")
+                        return
+                else:
+                    consecutive_chat_errors = 0
 
-                for attempt_index, target_phone in enumerate(phone_list):
-                    if self.stop_event.is_set():
-                        break
-
-                    try:
-                        # Verificar que la sesión esté activa (incluye detección de QR)
-                        if not self.sms_service.is_session_active():
-                            if self.sms_service.is_qr_visible():
-                                # QR detectado dentro del bucle de intentos
-                                print(f"[SMS][{self.profile.name}] ⚠️ QR detectado (is_session_active) — bloqueando perfil")
-                                self._mark_profile_qr_blocked()
-                                self.report_service.add_entry(phone, "QR detectado — envío cancelado")
-                                for pending_phone in self.phone_numbers[index + 1:]:
-                                    self.report_service.add_entry(pending_phone, "Cancelado (QR detectado en perfil)")
-                                if self.progress_callback:
-                                    self.progress_callback(
-                                        index, total,
-                                        f"⚠️ QR detectado — perfil [{self.profile.name}] bloqueado para SMS"
-                                    )
-                                return
-                            raise Exception("Sesión de Google Messages cerrada inesperadamente")
-
-                        # Resolver mensaje
-                        message_text = self._build_message(phone)
-                        if not message_text:
-                            self.report_service.add_entry(phone, "Sin mensaje configurado")
-                            break
-
-                        # Flujo de envío
-                        self.sms_service.click_new_chat()
-
-                        if not self.sms_service.search_contact(str(target_phone)):
-                            if attempt_index < len(phone_list) - 1:
-                                continue
-                            self.report_service.add_entry(phone, "No encontrado / Error búsqueda")
-                            break
-
-                        exists, has_sms, err = self.sms_service.check_contact_exists()
-                        if not has_sms:
-                            self.sms_service.go_back()
-                            if attempt_index < len(phone_list) - 1:
-                                continue
-                            self.report_service.add_entry(phone, "Número no reconocido por Google Messages")
-                            break
-
-                        if not self.sms_service.open_chat():
-                            if attempt_index < len(phone_list) - 1:
-                                continue
-                            self.report_service.add_entry(phone, "No se pudo abrir el chat")
-                            break
-
-                        if not self.sms_service.send_text_message(message_text):
-                            self.report_service.add_entry(phone, "Error escribiendo mensaje")
-                            break
-
-                        self.sms_service.send_message_simple()
-
-                        # Verificar estado de entrega
-                        delivery_status = self.sms_service.check_delivery_status(timeout=6)
-
-                        status_msg = delivery_status
-                        if attempt_index > 0:
-                            status_msg = f"{delivery_status} (contacto {attempt_index + 1})"
-
-                        self.report_service.add_entry(phone, status_msg)
-                        sent_successfully = True
-
-                        self.sms_service.close_chat()
-                        break
-
-                    except Exception as e:
-                        print(f"[SMS] Error procesando {target_phone} (intento {attempt_index + 1}): {e}")
-                        if attempt_index < len(phone_list) - 1:
-                            continue
-                        self.report_service.add_entry(phone, f"Error: {str(e)}")
-
-                # Pausa entre envíos
                 if index < total - 1 and not self.stop_event.is_set():
                     time.sleep(interval)
                     if pause_after > 0 and (index + 1) % pause_after == 0:
@@ -227,8 +141,109 @@ class SmsAutomationRunner:
             if self.completion_callback:
                 self.completion_callback(report_path)
 
+    def _process_single_message(self, service, phone, profile_name) -> bool:
+        """
+        Procesa un solo número.
+        Retorna True si el fallo fue por error al abrir el chat (para contador consecutivo).
+        Retorna False en cualquier otro caso (éxito, número no encontrado, etc.).
+        """
+        status = "Fallido"
+        is_chat_failure = False
+
+        phone_list = [phone]
+        contacts = self.contact_data.get(phone, {})
+        if contacts:
+            import numpy as np
+            valid = [v for v in contacts.values()
+                     if v is not None and not (isinstance(v, float) and np.isnan(v))]
+            phone_list.extend(valid)
+
+        for attempt_index, target_phone in enumerate(phone_list):
+            if self.stop_event.is_set():
+                break
+            try:
+                # Verificar sesión / QR
+                if not service.is_session_active():
+                    if service.is_qr_visible():
+                        raise _QrDetectedException("QR detectado")
+                    raise Exception("Sesión cerrada inesperadamente")
+
+                message_text = self._build_message(phone)
+                if not message_text:
+                    self.report_service.add_entry(phone, "Sin mensaje configurado")
+                    return False
+
+                # Flujo: nuevo chat → buscar → abrir → verificar textarea
+                service.click_new_chat()
+
+                if not service.search_contact(str(target_phone)):
+                    if attempt_index < len(phone_list) - 1:
+                        continue
+                    self.report_service.add_entry(phone, "No encontrado / Error búsqueda")
+                    return False
+
+                exists, has_sms, err = service.check_contact_exists()
+                if not has_sms:
+                    service.go_back()
+                    if attempt_index < len(phone_list) - 1:
+                        continue
+                    self.report_service.add_entry(phone, "Número no reconocido por Google Messages")
+                    return False
+
+                # Abrir chat
+                if not service.open_chat():
+                    print(f"[SMS][{profile_name}] ⚠️ open_chat() falló para {target_phone} — volviendo")
+                    try:
+                        service.go_back()
+                    except Exception:
+                        pass
+                    if attempt_index < len(phone_list) - 1:
+                        is_chat_failure = True
+                        continue
+                    self.report_service.add_entry(phone, "Error abriendo chat")
+                    return True  # <- fallo de chat
+
+                # Verificación extra: ¿el textarea es accesible?
+                if not service.verify_chat_opened():
+                    print(f"[SMS][{profile_name}] ⚠️ Textarea no encontrado tras open_chat() — volviendo al inicio")
+                    try:
+                        service.go_back()
+                    except Exception:
+                        pass
+                    if attempt_index < len(phone_list) - 1:
+                        is_chat_failure = True
+                        continue
+                    self.report_service.add_entry(phone, "Error chat — textarea inaccesible")
+                    return True  # <- fallo de chat
+
+                # Chat abierto correctamente
+                is_chat_failure = False
+
+                if not service.send_text_message(message_text):
+                    self.report_service.add_entry(phone, "Error escribiendo mensaje")
+                    return False
+
+                service.send_message_simple()
+                delivery_status = service.check_delivery_status(timeout=6)
+                status_msg = delivery_status
+                if attempt_index > 0:
+                    status_msg = f"{delivery_status} (contacto {attempt_index + 1})"
+                self.report_service.add_entry(phone, status_msg)
+                service.close_chat()
+                return False  # éxito
+
+            except _QrDetectedException:
+                raise
+            except Exception as e:
+                print(f"[SMS] Error procesando {target_phone} (intento {attempt_index + 1}): {e}")
+                if attempt_index < len(phone_list) - 1:
+                    continue
+                self.report_service.add_entry(phone, f"Error: {str(e)}")
+                return False
+
+        return is_chat_failure
+
     def _build_message(self, phone: str) -> str:
-        """Construye el texto del mensaje según la configuración de campaña."""
         camp_type = self.config.get("campaign_type", "")
         if camp_type == "Default":
             return generate_random_message()
@@ -238,3 +253,7 @@ class SmsAutomationRunner:
             fallback_msg = self.fallback_campaign.message if self.fallback_campaign else raw_msg
             return replace_variables(raw_msg, user_info, fallback_msg)
         return ""
+
+
+class _QrDetectedException(Exception):
+    pass

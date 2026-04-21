@@ -315,6 +315,22 @@ class GoogleMessagesService:
             print(f"[GoogleMessages] Error open_chat: {e}")
             return False
 
+    def verify_chat_opened(self, timeout: int = 3) -> bool:
+        """
+        Verificación rápida tras open_chat(): confirma que el textarea
+        del mensaje está presente y es interactivo.
+        Retorna False si el textarea no aparece en `timeout` segundos.
+        """
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                EC.element_to_be_clickable((
+                    By.CSS_SELECTOR, 'textarea[data-e2e-message-input-box]'
+                ))
+            )
+            return True
+        except Exception:
+            return False
+
     def select_next_sim(self) -> bool:
         """
         Detecta si hay un selector de SIM en la pantalla de conversación.

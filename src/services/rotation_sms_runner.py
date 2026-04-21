@@ -1,6 +1,5 @@
 """
 Runner con Rotación de perfiles para automatización SMS via Google Messages.
-Basado en RotationAutomationRunner pero usando GoogleMessagesService.
 """
 import threading
 import queue
@@ -11,6 +10,8 @@ from typing import List, Dict, Optional
 from .google_messages_service import GoogleMessagesService
 from .report_service import ReportService
 from ..utils.message_templates import generate_random_message, replace_variables
+
+MAX_CONSECUTIVE_CHAT_ERRORS = 3
 
 
 class RotationSmsRunner:
@@ -224,6 +225,7 @@ class RotationSmsRunner:
 
             print(f"[SMS-Rotación][{profile.name}] Listo para enviar.")
             messages_sent = 0
+            consecutive_chat_errors = 0
 
             while (not self.stop_event.is_set() and
                    messages_sent < self.max_messages_per_profile):
@@ -252,11 +254,22 @@ class RotationSmsRunner:
                     self._update_progress(f"⚠️ [{profile.name}] QR detectado — perfil bloqueado para SMS")
                     return
 
-                self._process_single_message(service, current_phone, profile.name)
+                chat_failed = self._process_single_message(service, current_phone, profile.name)
                 messages_sent += 1
 
                 with self.pool_lock:
                     self.profile_message_counts[profile.name] = messages_sent
+
+                if chat_failed:
+                    consecutive_chat_errors += 1
+                    print(f"[SMS-Rotación][{profile.name}] ⚠️ Error de chat: {consecutive_chat_errors}/{MAX_CONSECUTIVE_CHAT_ERRORS}")
+                    if consecutive_chat_errors >= MAX_CONSECUTIVE_CHAT_ERRORS:
+                        print(f"[SMS-Rotación][{profile.name}] ❌ {MAX_CONSECUTIVE_CHAT_ERRORS} errores consecutivos — descartando perfil")
+                        self._mark_profile_qr_blocked(profile)
+                        self._update_progress(f"❌ [{profile.name}] Descartado — 3 errores consecutivos de chat")
+                        return
+                else:
+                    consecutive_chat_errors = 0
 
                 if not self.stop_event.is_set():
                     base_interval = int(self.config.get("interval", 20))
@@ -287,8 +300,13 @@ class RotationSmsRunner:
             time.sleep(2)
         return False
 
-    def _process_single_message(self, service, phone, profile_name):
-        status = "Fallido"
+    def _process_single_message(self, service, phone, profile_name) -> bool:
+        """
+        Procesa un solo número.
+        Retorna True si el fallo fue por error al abrir el chat.
+        Retorna False en cualquier otro caso (éxito o fallo no relacionado).
+        """
+        is_chat_failure = False
 
         phone_list = [phone]
         contacts = self.contact_data.get(phone, {})
@@ -307,49 +325,78 @@ class RotationSmsRunner:
 
                 message_text = self._build_message(phone)
                 if not message_text:
-                    status = "Sin mensaje"
-                    break
+                    self.report_service.add_entry(phone, "Sin mensaje")
+                    self._update_progress(f"[{profile_name}] {phone}: Sin mensaje")
+                    return False
 
                 service.click_new_chat()
 
                 if not service.search_contact(str(target_phone)):
                     if attempt_index < len(phone_list) - 1:
                         continue
-                    status = "No encontrado"
-                    break
+                    self.report_service.add_entry(phone, "No encontrado")
+                    self._update_progress(f"[{profile_name}] {phone}: No encontrado")
+                    return False
 
                 exists, has_sms, err = service.check_contact_exists()
                 if not has_sms:
                     service.go_back()
                     if attempt_index < len(phone_list) - 1:
                         continue
-                    status = "Número no reconocido"
-                    break
+                    self.report_service.add_entry(phone, "Número no reconocido")
+                    self._update_progress(f"[{profile_name}] {phone}: Número no reconocido")
+                    return False
 
+                # Abrir chat
                 if not service.open_chat():
+                    print(f"[SMS-Rotación][{profile_name}] ⚠️ open_chat() falló — volviendo")
+                    try:
+                        service.go_back()
+                    except Exception:
+                        pass
                     if attempt_index < len(phone_list) - 1:
+                        is_chat_failure = True
                         continue
-                    status = "Error abriendo chat"
-                    break
+                    self.report_service.add_entry(phone, "Error abriendo chat")
+                    self._update_progress(f"[{profile_name}] {phone}: Error abriendo chat")
+                    return True
 
+                # Verificación extra: textarea accesible
+                if not service.verify_chat_opened():
+                    print(f"[SMS-Rotación][{profile_name}] ⚠️ Textarea no encontrado — volviendo al inicio")
+                    try:
+                        service.go_back()
+                    except Exception:
+                        pass
+                    if attempt_index < len(phone_list) - 1:
+                        is_chat_failure = True
+                        continue
+                    self.report_service.add_entry(phone, "Error chat — textarea inaccesible")
+                    self._update_progress(f"[{profile_name}] {phone}: Error chat — textarea inaccesible")
+                    return True
+
+                # Chat abierto correctamente
+                is_chat_failure = False
                 service.send_text_message(message_text)
                 service.send_message_simple()
                 delivery = service.check_delivery_status(timeout=6)
-
                 status = delivery if attempt_index == 0 else f"{delivery} (contacto {attempt_index + 1})"
+                self.report_service.add_entry(phone, status)
+                self._update_progress(f"[{profile_name}] {phone}: {status}")
                 service.close_chat()
-                break
+                return False
 
             except _QrDetectedException:
-                raise  # propagar hacia _worker_run para que bloquee el perfil
+                raise
             except Exception as e:
                 print(f"[SMS-Rotación][{profile_name}] Error {target_phone} (intento {attempt_index + 1}): {e}")
                 if attempt_index < len(phone_list) - 1:
                     continue
-                status = f"Error: {str(e)}"
+                self.report_service.add_entry(phone, f"Error: {str(e)}")
+                self._update_progress(f"[{profile_name}] {phone}: Error: {str(e)}")
+                return False
 
-        self.report_service.add_entry(phone, status)
-        self._update_progress(f"[{profile_name}] {phone}: {status}")
+        return is_chat_failure
 
     def _build_message(self, phone: str) -> str:
         camp_type = self.config.get("campaign_type", "")
