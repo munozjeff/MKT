@@ -1,8 +1,8 @@
 {
-    "version": "1.6.4",
+    "version": "1.6.5",
     "build": "20260421",
     "release_date": "2026-04-21",
-    "release_notes": "- Fix crítico: Detección RCS mediante MutationObserver JavaScript — captura el placeholder RCS incluso si dura milisegundos, imposible de detectar con polling Python\n- Mejora: Observer se inyecta ANTES de abrir el chat para no perder el flash inicial\n- Mejora: Fallback de polling 3s tras selección de SIM si el observer no detectó RCS",
+    "release_notes": "- Fix: Verificación de entrega ahora espera activamente los chulitos RCS ([data-e2e-delivered-status-icon]) hasta 10s\n- Fix: Detección de error de envío (span.failed) mejorada con 2 selectores de respaldo\n- Fix: Ya no depende del cambio de URL (incorrecto en RCS que permanece en la misma conversación)\n- Mejora: Estado de reporte diferencia 'Entregado \u2713\u2713', 'Enviado' y 'Error al enviar'",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
