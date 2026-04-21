@@ -19,6 +19,7 @@ class RotationSmsRunner:
     - Pool de N perfiles activos simultáneos
     - Cada perfil envía máximo M mensajes antes de rotar
     - Cooldown configurable entre reusos de un mismo perfil
+    - Perfiles con QR detectado son marcados BLOQUEADO_SMS y excluidos de rotación
     """
 
     def __init__(self,
@@ -33,7 +34,8 @@ class RotationSmsRunner:
                  campaign=None,
                  fallback_campaign=None,
                  progress_callback=None,
-                 completion_callback=None):
+                 completion_callback=None,
+                 profile_blocked_callback=None):
 
         self.all_profiles = browser_profiles
         self.simultaneous_count = simultaneous_profiles
@@ -47,6 +49,8 @@ class RotationSmsRunner:
         self.fallback_campaign = fallback_campaign
         self.progress_callback = progress_callback
         self.completion_callback = completion_callback
+        # Callback opcional: se llama con (profile_name) cuando un perfil es bloqueado por QR
+        self.profile_blocked_callback = profile_blocked_callback
 
         self.report_service = ReportService()
 
@@ -56,6 +60,9 @@ class RotationSmsRunner:
 
         self.available_profiles = list(browser_profiles)
         self.recently_used = []
+
+        # Perfiles bloqueados por QR en esta sesión (excluidos de selección)
+        self.qr_blocked_profile_names = set()
 
         self.active_workers: Dict[str, threading.Thread] = {}
         self.profile_services: Dict[str, GoogleMessagesService] = {}
@@ -75,6 +82,23 @@ class RotationSmsRunner:
 
     def stop(self):
         self.stop_event.set()
+
+    def _mark_profile_qr_blocked(self, profile):
+        """Marca el perfil como BLOQUEADO_SMS y lo excluye de la rotación."""
+        try:
+            profile.add_tag("BLOQUEADO_SMS")
+            print(f"[SMS-Rotación][{profile.name}] Perfil marcado como BLOQUEADO_SMS (QR detectado en ejecución)")
+        except Exception as e:
+            print(f"[SMS-Rotación][{profile.name}] Error marcando perfil como bloqueado: {e}")
+
+        with self.pool_lock:
+            self.qr_blocked_profile_names.add(profile.name)
+
+        if self.profile_blocked_callback:
+            try:
+                self.profile_blocked_callback(profile.name)
+            except Exception:
+                pass
 
     def _master_run(self):
         try:
@@ -144,6 +168,9 @@ class RotationSmsRunner:
             for p in self.available_profiles:
                 if p.name in active_names:
                     continue
+                # Excluir perfiles bloqueados por QR en esta sesión
+                if p.name in self.qr_blocked_profile_names:
+                    continue
                 if p in self.recently_used:
                     continue
                 if self.profile_cooldown_minutes > 0 and p.name in self.profile_last_used:
@@ -155,7 +182,9 @@ class RotationSmsRunner:
                 self.recently_used = [p for p in self.recently_used if p.name in active_names]
                 candidates = [
                     p for p in self.available_profiles
-                    if p.name not in active_names and (
+                    if p.name not in active_names
+                    and p.name not in self.qr_blocked_profile_names
+                    and (
                         self.profile_cooldown_minutes == 0 or
                         p.name not in self.profile_last_used or
                         now - self.profile_last_used[p.name] >= timedelta(minutes=self.profile_cooldown_minutes)
@@ -198,10 +227,30 @@ class RotationSmsRunner:
 
             while (not self.stop_event.is_set() and
                    messages_sent < self.max_messages_per_profile):
+
+                # ── Verificar QR antes de procesar cada número ─────────────────
+                if service.is_qr_visible():
+                    print(f"[SMS-Rotación][{profile.name}] ⚠️ QR detectado durante ejecución — bloqueando perfil")
+                    self._mark_profile_qr_blocked(profile)
+                    if self.progress_callback:
+                        self.progress_callback(
+                            self.processed_count, self.total_messages,
+                            f"⚠️ [{profile.name}] QR detectado — perfil bloqueado para SMS"
+                        )
+                    return  # el master reemplazará este worker con otro perfil
+
                 try:
                     current_phone = self.phone_queue.get(timeout=2)
                 except queue.Empty:
                     break
+
+                # Doble chequeo de QR justo después de obtener el número
+                if service.is_qr_visible():
+                    print(f"[SMS-Rotación][{profile.name}] ⚠️ QR detectado al obtener número — bloqueando perfil")
+                    self._mark_profile_qr_blocked(profile)
+                    self.report_service.add_entry(current_phone, "QR detectado — envío cancelado")
+                    self._update_progress(f"⚠️ [{profile.name}] QR detectado — perfil bloqueado para SMS")
+                    return
 
                 self._process_single_message(service, current_phone, profile.name)
                 messages_sent += 1
@@ -252,6 +301,8 @@ class RotationSmsRunner:
         for attempt_index, target_phone in enumerate(phone_list):
             try:
                 if not service.is_session_active():
+                    if service.is_qr_visible():
+                        raise _QrDetectedException(f"QR detectado al procesar {phone}")
                     raise Exception("Sesión cerrada")
 
                 message_text = self._build_message(phone)
@@ -289,6 +340,8 @@ class RotationSmsRunner:
                 service.close_chat()
                 break
 
+            except _QrDetectedException:
+                raise  # propagar hacia _worker_run para que bloquee el perfil
             except Exception as e:
                 print(f"[SMS-Rotación][{profile_name}] Error {target_phone} (intento {attempt_index + 1}): {e}")
                 if attempt_index < len(phone_list) - 1:
@@ -325,3 +378,8 @@ class RotationSmsRunner:
                     pass
             self.profile_services.clear()
             self.active_workers.clear()
+
+
+class _QrDetectedException(Exception):
+    """Excepción interna: QR detectado durante el procesamiento de un mensaje."""
+    pass

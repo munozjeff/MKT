@@ -17,7 +17,8 @@ class SmsAutomationRunner:
 
     def __init__(self, browser_profile, config, phone_numbers, user_data=None,
                  contact_data=None, campaign=None, fallback_campaign=None,
-                 progress_callback=None, completion_callback=None):
+                 progress_callback=None, completion_callback=None,
+                 profile_blocked_callback=None):
         self.profile = browser_profile
         self.config = config
         self.phone_numbers = phone_numbers
@@ -27,6 +28,8 @@ class SmsAutomationRunner:
         self.fallback_campaign = fallback_campaign
         self.progress_callback = progress_callback
         self.completion_callback = completion_callback
+        # Callback opcional: se llama con (profile_name) cuando se detecta QR y el perfil es bloqueado
+        self.profile_blocked_callback = profile_blocked_callback
 
         self.stop_event = threading.Event()
         self.sms_service = GoogleMessagesService()
@@ -41,6 +44,20 @@ class SmsAutomationRunner:
     def stop(self):
         """Detiene la ejecución."""
         self.stop_event.set()
+
+    def _mark_profile_qr_blocked(self):
+        """Marca el perfil como BLOQUEADO_SMS al detectar QR en ejecución."""
+        try:
+            self.profile.add_tag("BLOQUEADO_SMS")
+            print(f"[SMS][{self.profile.name}] Perfil marcado como BLOQUEADO_SMS (QR detectado en ejecución)")
+        except Exception as e:
+            print(f"[SMS][{self.profile.name}] Error marcando perfil como bloqueado: {e}")
+
+        if self.profile_blocked_callback:
+            try:
+                self.profile_blocked_callback(self.profile.name)
+            except Exception:
+                pass
 
     def _run(self):
         """Lógica principal del loop de envío."""
@@ -87,6 +104,21 @@ class SmsAutomationRunner:
                 if self.stop_event.is_set():
                     break
 
+                # ── Verificar QR antes de cada envío ──────────────────────────────
+                if self.sms_service.is_qr_visible():
+                    print(f"[SMS][{self.profile.name}] ⚠️ QR detectado durante ejecución — bloqueando perfil")
+                    self._mark_profile_qr_blocked()
+                    self.report_service.add_entry(phone, "QR detectado — envío cancelado")
+                    # Reportar restantes como cancelados
+                    for pending_phone in self.phone_numbers[index + 1:]:
+                        self.report_service.add_entry(pending_phone, "Cancelado (QR detectado en perfil)")
+                    if self.progress_callback:
+                        self.progress_callback(
+                            index, total,
+                            f"⚠️ QR detectado — perfil [{self.profile.name}] bloqueado para SMS"
+                        )
+                    return  # finalizar; el finally cierra el navegador y guarda el reporte
+
                 if self.progress_callback:
                     self.progress_callback(index, total, f"Enviando SMS a {phone}...")
 
@@ -106,8 +138,21 @@ class SmsAutomationRunner:
                         break
 
                     try:
-                        # Verificar que la sesión esté activa
+                        # Verificar que la sesión esté activa (incluye detección de QR)
                         if not self.sms_service.is_session_active():
+                            if self.sms_service.is_qr_visible():
+                                # QR detectado dentro del bucle de intentos
+                                print(f"[SMS][{self.profile.name}] ⚠️ QR detectado (is_session_active) — bloqueando perfil")
+                                self._mark_profile_qr_blocked()
+                                self.report_service.add_entry(phone, "QR detectado — envío cancelado")
+                                for pending_phone in self.phone_numbers[index + 1:]:
+                                    self.report_service.add_entry(pending_phone, "Cancelado (QR detectado en perfil)")
+                                if self.progress_callback:
+                                    self.progress_callback(
+                                        index, total,
+                                        f"⚠️ QR detectado — perfil [{self.profile.name}] bloqueado para SMS"
+                                    )
+                                return
                             raise Exception("Sesión de Google Messages cerrada inesperadamente")
 
                         # Resolver mensaje

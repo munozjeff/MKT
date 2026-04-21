@@ -661,6 +661,15 @@ class SendView(ttk.Frame):
                     # Widget ya fue destruido
                     task_active['active'] = False
             self.after(0, _update)
+
+        def on_profile_blocked(profile_name):
+            """Llamado cuando un worker detecta QR y bloquea el perfil mid-run."""
+            def _refresh():
+                try:
+                    self.refresh_profiles()
+                except Exception:
+                    pass
+            self.after(0, _refresh)
             
         def on_complete(report_path):
             def _finish():
@@ -692,7 +701,8 @@ class SendView(ttk.Frame):
                     campaign=campaign,
                     fallback_campaign=fallback_campaign,
                     progress_callback=update_ui,
-                    completion_callback=on_complete
+                    completion_callback=on_complete,
+                    profile_blocked_callback=on_profile_blocked
                 )
             else:
                 runner = AutomationRunner(
@@ -717,7 +727,8 @@ class SendView(ttk.Frame):
                     campaign=campaign,
                     fallback_campaign=fallback_campaign,
                     progress_callback=update_ui,
-                    completion_callback=on_complete
+                    completion_callback=on_complete,
+                    profile_blocked_callback=on_profile_blocked
                 )
             else:
                 runner = DistributedAutomationRunner(
@@ -780,7 +791,8 @@ class SendView(ttk.Frame):
                     campaign=campaign,
                     fallback_campaign=fallback_campaign,
                     progress_callback=update_ui,
-                    completion_callback=on_complete
+                    completion_callback=on_complete,
+                    profile_blocked_callback=on_profile_blocked
                 )
             else:
                 runner = RotationAutomationRunner(

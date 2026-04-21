@@ -43,9 +43,14 @@ class BrowsersView(ttk.Frame):
         self.tree.heading("Etiquetas", text="Etiquetas")
         self.tree.heading("Ruta", text="Ruta de Datos")
         self.tree.column("Nombre", width=150)
-        self.tree.column("Estado", width=80)
+        self.tree.column("Estado", width=120)
         self.tree.column("Etiquetas", width=150)
         self.tree.column("Ruta", width=250)
+
+        # Estilos de fila por estado
+        self.tree.tag_configure("bloq_sms", background="#FFD6CC", foreground="#8B0000")
+        self.tree.tag_configure("bloqueado", background="#FFF3CC", foreground="#7A4F00")
+        self.tree.tag_configure("disponible", background="", foreground="")
         
         # Scrollbar
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
@@ -140,7 +145,21 @@ class BrowsersView(ttk.Frame):
         
         for profile in profiles_sorted:
             is_active = self.browser_service.is_profile_active(profile.name)
-            status = "Ocupado" if is_active else "Disponible"
+            upper_tags = [t.upper() for t in profile.tags]
+
+            # Determinar estado y estilo de fila
+            if "BLOQUEADO_SMS" in upper_tags:
+                status = "⚠️ BLOQ-SMS"
+                row_tag = "bloq_sms"
+            elif "BLOQUEADO" in upper_tags:
+                status = "🔒 Bloqueado"
+                row_tag = "bloqueado"
+            elif is_active:
+                status = "Ocupado"
+                row_tag = "disponible"
+            else:
+                status = "Disponible"
+                row_tag = "disponible"
             
             # Formato de etiquetas (ordenadas alfabéticamente para consistencia visual)
             tags_str = ", ".join(sorted(profile.tags)) if profile.tags else ""
@@ -148,7 +167,8 @@ class BrowsersView(ttk.Frame):
             # Solo mostrar parte final de la ruta para que no sea tan larga
             short_path = "..." + profile.path[-30:] if len(profile.path) > 30 else profile.path
             
-            self.tree.insert("", "end", values=(profile.name, status, tags_str, short_path))
+            self.tree.insert("", "end", values=(profile.name, status, tags_str, short_path),
+                             tags=(row_tag,))
             
         # Calcular estadísticas
         tag_counts = {}
@@ -256,7 +276,10 @@ class BrowsersView(ttk.Frame):
             time.sleep(1)
 
     def _run_browser_google_messages(self, profile_name):
-        """Abre el navegador con Google Messages y mantiene el perfil bloqueado mientras Chrome esté abierto."""
+        """Abre el navegador con Google Messages y mantiene el perfil bloqueado mientras Chrome esté abierto.
+        Si el perfil tiene la etiqueta BLOQUEADO_SMS y el usuario se re-autentica exitosamente, se elimina
+        automáticamente la etiqueta para que el perfil vuelva a estar disponible para enviar SMS.
+        """
         if not self.browser_service.lock_profile(profile_name):
             return
 
@@ -269,6 +292,10 @@ class BrowsersView(ttk.Frame):
             if not profile:
                 return
 
+            # Verificar si el perfil está marcado como BLOQUEADO_SMS
+            was_qr_blocked = "BLOQUEADO_SMS" in [t.upper() for t in profile.tags]
+            unblocked_done = False
+
             service = GoogleMessagesService()
             if service.initialize_driver(profile.path):
                 while True:
@@ -277,6 +304,17 @@ class BrowsersView(ttk.Frame):
                         service.driver.title  # Verifica si Chrome sigue vivo
                     except Exception:
                         break
+
+                    # Si el perfil estaba bloqueado por QR, verificar si ya se re-autenticó
+                    if was_qr_blocked and not unblocked_done:
+                        try:
+                            if service.is_logged_in():
+                                profile.remove_tag("BLOQUEADO_SMS")
+                                unblocked_done = True
+                                print(f"[GoogleMessages] Perfil '{profile_name}' re-autenticado — BLOQUEADO_SMS eliminado.")
+                                self.after(0, self.load_profiles)
+                        except Exception as e:
+                            print(f"[GoogleMessages] Error verificando re-auth: {e}")
 
         except Exception as e:
             print(f"Error abriendo Google Messages: {e}")
@@ -529,9 +567,12 @@ class BrowsersView(ttk.Frame):
             self.after(0, self.load_profiles)
 
     def export_blocked_profiles(self):
-        """Exporta los perfiles con etiqueta BLOQUEADO, con el mismo orden de agrupación."""
+        """Exporta los perfiles con etiqueta BLOQUEADO o BLOQUEADO_SMS, con el mismo orden de agrupación."""
         all_profiles = self.browser_service.get_all_profiles()
-        blocked = [p for p in all_profiles if "BLOQUEADO" in [t.upper() for t in p.tags]]
+        blocked = [
+            p for p in all_profiles
+            if any(t.upper() in ("BLOQUEADO", "BLOQUEADO_SMS") for t in p.tags)
+        ]
         
         if not blocked:
             messagebox.showinfo("Exportar", "No hay perfiles con la etiqueta 'BLOQUEADO'.")

@@ -17,7 +17,8 @@ class DistributedSmsRunner:
 
     def __init__(self, browser_profiles, config, phone_numbers, user_data=None,
                  contact_data=None, campaign=None, fallback_campaign=None,
-                 progress_callback=None, completion_callback=None):
+                 progress_callback=None, completion_callback=None,
+                 profile_blocked_callback=None):
         self.profiles = browser_profiles
         self.config = config
         self.user_data = user_data or {}
@@ -26,6 +27,8 @@ class DistributedSmsRunner:
         self.fallback_campaign = fallback_campaign
         self.progress_callback = progress_callback
         self.completion_callback = completion_callback
+        # Callback opcional: se llama con (profile_name) cuando se detecta QR
+        self.profile_blocked_callback = profile_blocked_callback
 
         self.report_service = ReportService()
         self.phone_queue = queue.Queue()
@@ -65,6 +68,20 @@ class DistributedSmsRunner:
         if self.completion_callback:
             self.completion_callback(report_path)
 
+    def _mark_profile_qr_blocked(self, profile):
+        """Marca el perfil como BLOQUEADO_SMS al detectar QR en ejecución."""
+        try:
+            profile.add_tag("BLOQUEADO_SMS")
+            print(f"[SMS-Dist][{profile.name}] Perfil marcado como BLOQUEADO_SMS (QR detectado en ejecución)")
+        except Exception as e:
+            print(f"[SMS-Dist][{profile.name}] Error marcando perfil como bloqueado: {e}")
+
+        if self.profile_blocked_callback:
+            try:
+                self.profile_blocked_callback(profile.name)
+            except Exception:
+                pass
+
     def _worker_run(self, profile):
         """Lógica de cada worker con su propio navegador."""
         service = GoogleMessagesService()
@@ -84,10 +101,29 @@ class DistributedSmsRunner:
             print(f"[SMS-Dist][{profile.name}] Listo para enviar.")
 
             while not self.phone_queue.empty() and not self.stop_event.is_set():
+                # ── Verificar QR antes de procesar cada número ─────────────────
+                if service.is_qr_visible():
+                    print(f"[SMS-Dist][{profile.name}] ⚠️ QR detectado durante ejecución — bloqueando perfil")
+                    self._mark_profile_qr_blocked(profile)
+                    if self.progress_callback:
+                        self.progress_callback(
+                            self.processed_count, self.total_messages,
+                            f"⚠️ [{profile.name}] QR detectado — perfil bloqueado para SMS"
+                        )
+                    return  # terminar este worker; otros siguen con la cola
+
                 try:
                     current_phone = self.phone_queue.get_nowait()
                 except queue.Empty:
                     break
+
+                # Verificar QR una vez más justo antes de enviar (doble chequeo)
+                if service.is_qr_visible():
+                    print(f"[SMS-Dist][{profile.name}] ⚠️ QR detectado al obtener número — bloqueando perfil")
+                    self._mark_profile_qr_blocked(profile)
+                    self.report_service.add_entry(current_phone, "QR detectado — envío cancelado")
+                    self._update_progress(f"⚠️ [{profile.name}] QR detectado — perfil bloqueado para SMS")
+                    return
 
                 self._process_single_message(service, current_phone, profile.name)
 
@@ -132,6 +168,9 @@ class DistributedSmsRunner:
         for attempt_index, target_phone in enumerate(phone_list):
             try:
                 if not service.is_session_active():
+                    if service.is_qr_visible():
+                        # QR detectado dentro del procesamiento — propagar como excepción especial
+                        raise _QrDetectedException(f"QR detectado al procesar {phone}")
                     raise Exception("Sesión cerrada")
 
                 message_text = self._build_message(phone)
@@ -169,6 +208,8 @@ class DistributedSmsRunner:
                 service.close_chat()
                 break
 
+            except _QrDetectedException:
+                raise  # propagar hacia _worker_run
             except Exception as e:
                 print(f"[SMS-Dist][{profile_name}] Error {target_phone} (intento {attempt_index + 1}): {e}")
                 if attempt_index < len(phone_list) - 1:
@@ -195,3 +236,8 @@ class DistributedSmsRunner:
             idx = self.processed_count
         if self.progress_callback:
             self.progress_callback(idx, self.total_messages, current_action)
+
+
+class _QrDetectedException(Exception):
+    """Excepción interna: QR detectado durante el procesamiento de un mensaje."""
+    pass
