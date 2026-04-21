@@ -289,22 +289,32 @@ class SendView(ttk.Frame):
             var.set(val)
             
     def refresh_profiles(self):
-        profiles = self.browser_service.get_available_profiles()
+        # Perfiles disponibles (no ocupados por otra tarea en curso)
+        available = self.browser_service.get_available_profiles()
+
+        # Filtrar según el estado de bloqueo del canal
+        block_tag = "BLOQUEADO_SMS" if self._channel != "WhatsApp" else "BLOQUEADO"
+        profiles = [
+            p for p in available
+            if block_tag not in [t.upper() for t in p.tags]
+        ]
+
         values = [p.name for p in profiles]
         
-        # Obtener todas las etiquetas únicas
+        # Etiquetas únicas (excluir las de bloqueo que ya tienen columna propia)
+        SKIP_TAGS = {"BLOQUEADO", "BLOQUEADO_SMS"}
         all_tags = set()
         for p in profiles:
             for tag in p.tags:
-                all_tags.add(tag)
+                if tag.upper() not in SKIP_TAGS:
+                    all_tags.add(tag)
         sorted_tags = sorted(list(all_tags))
         
         # Actualizar Combo (Individual)
         self.combo_profiles['values'] = values
-        self.combo_profiles.set('') # Limpiar selección por defecto
+        self.combo_profiles.set('')
             
         # Actualizar Checkboxes (Distribuido)
-        # Limpiar anteriores
         for widget in self.inner_frame_profiles.winfo_children():
             widget.destroy()
         self.profile_vars.clear()
@@ -328,14 +338,17 @@ class SendView(ttk.Frame):
             var = tk.BooleanVar(value=False)
             self.profile_vars[p_name] = var
             
-            # Formato nombre con etiquetas
+            # Formato nombre con etiquetas (excluir las de bloqueo)
             p_obj = next((p for p in profiles if p.name == p_name), None)
             display_text = p_name
-            if p_obj and p_obj.tags:
-                display_text += f" [{', '.join(p_obj.tags)}]"
+            if p_obj:
+                visible_tags = [t for t in p_obj.tags if t.upper() not in SKIP_TAGS]
+                if visible_tags:
+                    display_text += f" [{', '.join(visible_tags)}]"
                 
             chk = ttk.Checkbutton(self.inner_frame_profiles, text=display_text, variable=var)
             chk.pack(anchor="w", padx=5)
+
 
     def select_by_tag(self, profiles):
         """Marca los perfiles que coincidan con la etiqueta seleccionada."""

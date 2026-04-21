@@ -139,22 +139,40 @@ class BrowsersView(ttk.Frame):
 
     def _sort_profiles_by_tags(self, profiles):
         """
-        Ordena perfiles agrupando por conjunto de etiquetas (frozenset, orden no importa).
-        
-        Criterio:
-          1. Más etiquetas primero (grupos más específicos al inicio).
-          2. Dentro del mismo número de etiquetas, ordenar grupos alfabéticamente.
-          3. Dentro de cada grupo, ordenar perfiles por nombre.
-          4. Perfiles sin etiquetas al final.
+        Ordena perfiles por sufijo numérico tras el primer '_' del nombre.
+
+        Ejemplos:
+          '+57 3217166019_4_1'  → clave (0, [4, 1], ...)   grupo 4, índice 1
+          '+57 3217165679_4_2'  → clave (0, [4, 2], ...)   grupo 4, índice 2
+          '+57 3217165679_10_1' → clave (0, [10, 1], ...)  grupo 10, índice 1
+          'perfil_sin_numero'   → clave (0, [...], ...)     por partes del sufijo
+          'SinGuion'            → clave (1, [], ...)        al final, alfabético
+
+        Criterio de comparación de cada parte del sufijo:
+          - Si la parte es número entero → comparación numérica (ej. 10 > 9)
+          - Si no es número → comparación alfabética, se coloca después de números
         """
-        def sort_key(profile):
-            tag_set = frozenset(t.upper() for t in profile.tags)
-            n_tags = len(tag_set)
-            # Negamos n_tags para que más etiquetas vayan primero
-            group_label = tuple(sorted(tag_set))  # clave de grupo reproducible
-            return (-n_tags, group_label, profile.name.lower())
-        
-        return sorted(profiles, key=sort_key)
+        def _suffix_key(name: str) -> tuple:
+            if '_' not in name:
+                # Sin guion → al final, orden alfabético
+                return (1, [], name.lower())
+
+            suffix = name[name.index('_') + 1:]   # todo lo que va tras el primer '_'
+            parts = suffix.split('_')
+
+            # Cada parte: (0, int) si es número, (1, str) si no lo es
+            # Así los números siempre van antes que el texto y se ordenan correctamente
+            numeric_key = []
+            for p in parts:
+                try:
+                    numeric_key.append((0, int(p)))
+                except ValueError:
+                    numeric_key.append((1, p.lower()))
+
+            return (0, numeric_key, name.lower())
+
+        return sorted(profiles, key=lambda p: _suffix_key(p.name))
+
 
     def load_profiles(self):
         """Carga los perfiles en la tabla con columnas independientes de estado WA y SMS."""
