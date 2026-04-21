@@ -234,12 +234,12 @@ class DistributedSmsRunner:
                     self._update_progress(f"[{profile_name}] {phone}: Error chat — textarea inaccesible")
                     return True
 
-                # Selección de SIM (round-robin)
-                service.select_next_sim()
-
-                # ── Verificar RCS: observer + polling de respaldo ────────────
+                # ── Verificar RCS ANTES de seleccionar SIM ────────────────────
+                # ANTES de select_next_sim: el placeholder refleja el estado real
+                # del contacto. Después de abrir el menú de SIM puede mostrar
+                # "RCS" por capacidad de la SIM y causar falsos positivos.
                 if self.only_rcs:
-                    rcs_ok = service.query_rcs_observer()
+                    rcs_ok = service.query_rcs_observer()   # captura flash del observer JS
                     if not rcs_ok:
                         rcs_ok = service.is_rcs_available(timeout=3)
                 else:
@@ -255,8 +255,9 @@ class DistributedSmsRunner:
                     self._update_progress(f"[{profile_name}] {phone}: No RCS — omitido")
                     return False
 
-                # Chat abierto y RCS validado — enviar
+                # RCS confirmado — seleccionar SIM y enviar
                 is_chat_failure = False
+                service.select_next_sim()
                 service.send_text_message(message_text)
                 service.send_message_simple()
                 delivery = service.check_delivery_status(timeout=10)

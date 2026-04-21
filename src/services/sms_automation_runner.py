@@ -223,14 +223,14 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Error chat — textarea inaccesible")
                     return True  # <- fallo de chat
 
-                # Selección de SIM (round-robin)
-                service.select_next_sim()
-
-                # ── Verificar RCS: observer + polling de respaldo ─────────────
+                # ── Verificar RCS ANTES de seleccionar SIM ────────────────────
+                # IMPORTANTE: debe hacerse ANTES de select_next_sim() porque al
+                # abrir el menú de SIM el placeholder puede mostrar "RCS" reflejando
+                # la capacidad de la SIM (no del contacto), causando falsos positivos.
                 if self.only_rcs:
-                    rcs_ok = service.query_rcs_observer()      # resultado del observer JS
+                    rcs_ok = service.query_rcs_observer()   # captura el flash del observer JS
                     if not rcs_ok:
-                        # Fallback: el placeholder puede aún estar cargando
+                        # Fallback: placeholder aún en estado real del contacto
                         rcs_ok = service.is_rcs_available(timeout=3)
                 else:
                     rcs_ok = True
@@ -244,8 +244,9 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "No RCS — omitido")
                     return False  # no es fallo de chat
 
-                # Chat abierto y RCS validado — enviar
+                # RCS confirmado — seleccionar SIM y enviar
                 is_chat_failure = False
+                service.select_next_sim()
 
                 if not service.send_text_message(message_text):
                     self.report_service.add_entry(phone, "Error escribiendo mensaje")
