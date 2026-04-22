@@ -419,7 +419,7 @@ class GoogleMessagesService:
             print(f"[GoogleMessages] Error consultando RCS observer: {e}")
             return False
 
-    def is_rcs_available(self, timeout: float = 5.0, poll: float = 0.5) -> bool:
+    def is_rcs_available(self, timeout: float = 5.0, poll: float = 0.1) -> bool:
         """
         Verifica si el modo RCS está disponible para el número actual.
 
@@ -433,7 +433,7 @@ class GoogleMessagesService:
 
         Args:
             timeout: Segundos máximos de espera (por defecto 5).
-            poll:    Intervalo entre sondeos en segundos (por defecto 0.5).
+            poll:    Intervalo entre sondeos en segundos (por defecto 0.1 = 100ms).
 
         Retorna True  → el número admite RCS.
         Retorna False → solo SMS convencional tras agotar el tiempo de espera.
@@ -448,6 +448,7 @@ class GoogleMessagesService:
                 placeholder = (textarea.get_attribute('placeholder') or '').upper()
                 aria_label  = (textarea.get_attribute('aria-label')  or '').upper()
                 if 'RCS' in placeholder or 'RCS' in aria_label:
+                    print(f"[GoogleMessages] \u2705 RCS detectado: '{placeholder or aria_label}'")
                     return True
             except Exception:
                 pass   # textarea aún no visible, seguimos esperando

@@ -191,12 +191,6 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Número no reconocido por Google Messages")
                     return False
 
-                # ── Observer RCS: inyectar ANTES de abrir el chat ────────────
-                # El MutationObserver JS captura cualquier flash del placeholder
-                # (incluso de milisegundos) que Python nunca podría detectar.
-                if self.only_rcs:
-                    service.inject_rcs_observer()
-
                 # Abrir chat
                 if not service.open_chat():
                     print(f"[SMS][{profile_name}] ⚠️ open_chat() falló para {target_phone} — volviendo")
@@ -210,9 +204,22 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Error abriendo chat")
                     return True  # <- fallo de chat
 
+                # ── Filtro Solo RCS ───────────────────────────────────────────
+                # Se verifica inmediatamente después de abrir el chat (antes de
+                # cualquier otra acción) leyendo el placeholder del textarea.
+                # Polling cada 100ms por hasta 5s para capturar el flash inicial.
+                if self.only_rcs and not service.is_rcs_available(timeout=5):
+                    print(f"[SMS][{profile_name}] No RCS para {target_phone} — omitiendo")
+                    try:
+                        service.go_back()
+                    except Exception:
+                        pass
+                    self.report_service.add_entry(phone, "No RCS — omitido")
+                    return False  # no es fallo de chat
+
                 # Verificación extra: ¿el textarea es accesible?
                 if not service.verify_chat_opened():
-                    print(f"[SMS][{profile_name}] ⚠️ Textarea no encontrado tras open_chat() — volviendo al inicio")
+                    print(f"[SMS][{profile_name}] ⚠️ Textarea no encontrado tras open_chat() — volviendo")
                     try:
                         service.go_back()
                     except Exception:
@@ -223,28 +230,7 @@ class SmsAutomationRunner:
                     self.report_service.add_entry(phone, "Error chat — textarea inaccesible")
                     return True  # <- fallo de chat
 
-                # ── Verificar RCS ANTES de seleccionar SIM ────────────────────
-                # IMPORTANTE: debe hacerse ANTES de select_next_sim() porque al
-                # abrir el menú de SIM el placeholder puede mostrar "RCS" reflejando
-                # la capacidad de la SIM (no del contacto), causando falsos positivos.
-                if self.only_rcs:
-                    rcs_ok = service.query_rcs_observer()   # captura el flash del observer JS
-                    if not rcs_ok:
-                        # Fallback: placeholder aún en estado real del contacto
-                        rcs_ok = service.is_rcs_available(timeout=3)
-                else:
-                    rcs_ok = True
-
-                if not rcs_ok:
-                    print(f"[SMS][{profile_name}] No RCS para {target_phone} — omitiendo")
-                    try:
-                        service.go_back()
-                    except Exception:
-                        pass
-                    self.report_service.add_entry(phone, "No RCS — omitido")
-                    return False  # no es fallo de chat
-
-                # RCS confirmado — seleccionar SIM y enviar
+                # RCS confirmado (o no requerido) — seleccionar SIM y enviar
                 is_chat_failure = False
                 service.select_next_sim()
 
