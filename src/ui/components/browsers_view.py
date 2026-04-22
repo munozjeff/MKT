@@ -34,16 +34,28 @@ class BrowsersView(ttk.Frame):
         # Frame de lista (Izquierda)
         list_frame = ttk.LabelFrame(main_frame, text="Perfiles Disponibles")
         list_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PADDING_MEDIUM))
-        
-        # Tabla de perfiles — columnas independientes para Estado WA y Estado SMS
+
+        # ── Barra de búsqueda por nombre ────────────────────────────────
+        search_bar = ttk.Frame(list_frame)
+        search_bar.pack(fill=tk.X, padx=5, pady=(5, 2))
+        ttk.Label(search_bar, text="🔍 Buscar:").pack(side=tk.LEFT, padx=(0, 4))
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", self._on_search_change)
+        self._search_entry = ttk.Entry(search_bar, textvariable=self._search_var)
+        self._search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(search_bar, text="✕", width=3,
+                   command=lambda: self._search_var.set("")).pack(side=tk.LEFT, padx=(2, 0))
+
+        # ── Tabla de perfiles ────────────────────────────────────────────
         columns = ("Nombre", "Estado", "WA", "SMS", "Etiquetas", "Ruta")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings")
-        self.tree.heading("Nombre",   text="Nombre del Perfil")
-        self.tree.heading("Estado",   text="Uso")
-        self.tree.heading("WA",       text="WhatsApp")
-        self.tree.heading("SMS",      text="SMS")
-        self.tree.heading("Etiquetas",text="Etiquetas")
-        self.tree.heading("Ruta",     text="Ruta de Datos")
+        self.tree.heading("Nombre",    text="Nombre del Perfil",
+                          command=lambda: self._sort_tree("Nombre"))
+        self.tree.heading("Estado",    text="Uso")
+        self.tree.heading("WA",        text="WhatsApp")
+        self.tree.heading("SMS",       text="SMS")
+        self.tree.heading("Etiquetas", text="Etiquetas")
+        self.tree.heading("Ruta",      text="Ruta de Datos")
         self.tree.column("Nombre",    width=145)
         self.tree.column("Estado",    width=70)
         self.tree.column("WA",        width=100)
@@ -51,16 +63,12 @@ class BrowsersView(ttk.Frame):
         self.tree.column("Etiquetas", width=120)
         self.tree.column("Ruta",      width=200)
 
-        # Estilos de fila
-        self.tree.tag_configure("bloq_both",  background="#FFB3B3", foreground="#5C0000")
-        self.tree.tag_configure("bloq_sms",   background="#FFD6CC", foreground="#8B0000")
-        self.tree.tag_configure("bloqueado",  background="#FFF3CC", foreground="#7A4F00")
-        self.tree.tag_configure("disponible", background="",        foreground="")
-        
+        # Sin colores de fondo — el estado se distingue solo por íconos en las columnas WA/SMS
+
         # Scrollbar
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscroll=scrollbar.set)
-        
+
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
@@ -174,14 +182,52 @@ class BrowsersView(ttk.Frame):
         return sorted(profiles, key=lambda p: _suffix_key(p.name))
 
 
+    # ── Búsqueda en tiempo real ──────────────────────────────────────────
+    def _on_search_change(self, *args):
+        """
+        Filtra las filas de la tabla según el texto ingresado.
+        Usa _all_tree_items para poder reattach incluso los ítems detached.
+        """
+        query = self._search_var.get().lower()
+        for item_id in list(getattr(self, "_all_tree_items", [])):
+            try:
+                name = str(self.tree.item(item_id, "values")[0]).lower()
+                if query in name:
+                    # Reattach solo si estaba detached
+                    try:
+                        self.tree.reattach(item_id, "", "end")
+                    except Exception:
+                        pass  # Ya estaba adjuntado
+                else:
+                    try:
+                        self.tree.detach(item_id)
+                    except Exception:
+                        pass  # Ya estaba detached
+            except Exception:
+                pass
+
+    def _sort_tree(self, col):
+        """Ordena la tabla por la columna 'Nombre'."""
+        items = [(self.tree.set(k, col), k) for k in self.tree.get_children("")]
+        items.sort(key=lambda t: t[0].lower())
+        for index, (_, k) in enumerate(items):
+            self.tree.move(k, "", index)
+
     def load_profiles(self):
         """Carga los perfiles en la tabla con columnas independientes de estado WA y SMS."""
-        for item in self.tree.get_children():
+        # Reattach todos los ítems que pudieran estar detached, luego borrar
+        for item_id in getattr(self, "_all_tree_items", []):
+            try:
+                self.tree.reattach(item_id, "", "end")
+            except Exception:
+                pass
+        self._all_tree_items = []
+        for item in list(self.tree.get_children("")):
             self.tree.delete(item)
-            
+
         profiles = self.browser_service.get_all_profiles()
         profiles_sorted = self._sort_profiles_by_tags(profiles)
-        
+
         for profile in profiles_sorted:
             is_active  = self.browser_service.is_profile_active(profile.name)
             upper_tags = [t.upper() for t in profile.tags]
@@ -189,16 +235,16 @@ class BrowsersView(ttk.Frame):
             is_wa_blocked  = "BLOQUEADO"     in upper_tags
             is_sms_blocked = "BLOQUEADO_SMS" in upper_tags
 
-            # Columna "Uso" (solo indica si el perfil está ocupado por una tarea en curso)
+            # Columna "Uso"
             uso = "Ocupado" if is_active else "Libre"
 
-            # Columna WhatsApp
+            # Columna WhatsApp — solo ícono, sin color de fondo
             wa_status = "🔒 Bloqueado" if is_wa_blocked else "✅ Disponible"
 
             # Columna SMS
             sms_status = "⚠️ Bloqueado" if is_sms_blocked else "✅ Disponible"
 
-            # Etiquetas: excluir las que ya tienen columna propia
+            # Etiquetas: excluir las de bloqueo que ya tienen columna propia
             display_tags = [
                 t for t in profile.tags
                 if t.upper() not in ("BLOQUEADO", "BLOQUEADO_SMS")
@@ -207,20 +253,13 @@ class BrowsersView(ttk.Frame):
 
             short_path = "..." + profile.path[-28:] if len(profile.path) > 28 else profile.path
 
-            # Color de fila según estado de bloqueo
-            if is_wa_blocked and is_sms_blocked:
-                row_tag = "bloq_both"
-            elif is_sms_blocked:
-                row_tag = "bloq_sms"
-            elif is_wa_blocked:
-                row_tag = "bloqueado"
-            else:
-                row_tag = "disponible"
+            item_id = self.tree.insert("", "end",
+                             values=(profile.name, uso, wa_status, sms_status, tags_str, short_path))
+            self._all_tree_items.append(item_id)
 
-            self.tree.insert("", "end",
-                             values=(profile.name, uso, wa_status, sms_status, tags_str, short_path),
-                             tags=(row_tag,))
-            
+        # Re-aplicar filtro de búsqueda si hay texto activo
+        self._on_search_change()
+
         # Estadísticas (solo etiquetas que no sean de bloqueo)
         tag_counts = {}
         SKIP = {"BLOQUEADO", "BLOQUEADO_SMS"}
@@ -231,7 +270,7 @@ class BrowsersView(ttk.Frame):
             else:
                 for tag in visible:
                     tag_counts[tag] = tag_counts.get(tag, 0) + 1
-        
+
         self.update_stats(tag_counts)
             
     def show_context_menu(self, event):
