@@ -1,8 +1,8 @@
 {
-    "version": "1.6.7",
+    "version": "1.6.8",
     "build": "20260421",
     "release_date": "2026-04-21",
-    "release_notes": "- Fix: Detección RCS revertida a lectura directa Selenium/Python del placeholder (polling 100ms x 5s) — más confiable que el MutationObserver JS\n- Fix: Verificación RCS ocurre inmediatamente al abrir el chat, antes de seleccionar SIM",
+    "release_notes": "- Nuevo: La página de Google Messages se recarga automáticamente al llegar a la pausa programada entre lotes, liberando memoria del navegador y manteniendo la sesión activa",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
