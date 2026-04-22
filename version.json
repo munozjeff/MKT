@@ -1,8 +1,8 @@
 {
-    "version": "1.6.10",
+    "version": "1.6.11",
     "build": "20260422",
     "release_date": "2026-04-22",
-    "release_notes": "- UI: Sección de navegadores rediseñada en estilo tabla limpia sin colores de fondo; filtro de búsqueda por texto en tiempo real para encontrar perfiles por nombre (ej: _54_1)",
+    "release_notes": "- UI: Panel de estadísticas muestra disponibles/bloqueados por canal (WhatsApp y SMS) en lugar de conteo por etiqueta",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

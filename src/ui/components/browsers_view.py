@@ -138,8 +138,8 @@ class BrowsersView(ttk.Frame):
         btn_export_all = ttk.Button(action_frame, text="Exportar Todos", command=self.export_all_profiles)
         btn_export_all.pack(fill=tk.X, pady=5)
         
-        # Estadísticas
-        self.stats_frame = ttk.LabelFrame(action_frame, text="Estadísticas por Etiqueta")
+        # Estadísticas de disponibilidad
+        self.stats_frame = ttk.LabelFrame(action_frame, text="Disponibilidad")
         self.stats_frame.pack(fill=tk.BOTH, expand=True, pady=(20, 0))
         
         self.stats_text = tk.Text(self.stats_frame, height=10, width=25, font=("Consolas", 10), state='disabled', bg="#f0f0f0")
@@ -260,18 +260,11 @@ class BrowsersView(ttk.Frame):
         # Re-aplicar filtro de búsqueda si hay texto activo
         self._on_search_change()
 
-        # Estadísticas (solo etiquetas que no sean de bloqueo)
-        tag_counts = {}
-        SKIP = {"BLOQUEADO", "BLOQUEADO_SMS"}
-        for profile in profiles:
-            visible = [t for t in profile.tags if t.upper() not in SKIP]
-            if not visible:
-                tag_counts["(Sin etiqueta)"] = tag_counts.get("(Sin etiqueta)", 0) + 1
-            else:
-                for tag in visible:
-                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
-
-        self.update_stats(tag_counts)
+        # Estadísticas de disponibilidad
+        total = len(profiles)
+        wa_disponibles  = sum(1 for p in profiles if "BLOQUEADO"     not in [t.upper() for t in p.tags])
+        sms_disponibles = sum(1 for p in profiles if "BLOQUEADO_SMS" not in [t.upper() for t in p.tags])
+        self.update_stats(total, wa_disponibles, sms_disponibles)
             
     def show_context_menu(self, event):
         """Muestra el menú contextual."""
@@ -758,17 +751,25 @@ class BrowsersView(ttk.Frame):
             except Exception as e:
                 messagebox.showerror(MSG_ERROR, f"Error al exportar: {e}")
 
-    def update_stats(self, tag_counts):
-        """Actualiza el widget de estadísticas."""
+    def update_stats(self, total: int, wa_disponibles: int, sms_disponibles: int):
+        """Muestra cuántos perfiles están disponibles para WhatsApp y SMS."""
         self.stats_text.config(state='normal')
         self.stats_text.delete(1.0, tk.END)
-        
-        if not tag_counts:
+
+        if total == 0:
             self.stats_text.insert(tk.END, "No hay perfiles.")
         else:
-            # Ordenar por nombre de etiqueta
-            sorted_tags = sorted(tag_counts.items(), key=lambda x: x[0].lower())
-            for tag, count in sorted_tags:
-                self.stats_text.insert(tk.END, f"• {tag}: {count}\n")
-                
+            wa_bloqueados  = total - wa_disponibles
+            sms_bloqueados = total - sms_disponibles
+
+            self.stats_text.insert(tk.END, f"Total perfiles:  {total}\n")
+            self.stats_text.insert(tk.END, "─" * 22 + "\n")
+            self.stats_text.insert(tk.END, f"WhatsApp\n")
+            self.stats_text.insert(tk.END, f"  ✅ Disponibles: {wa_disponibles}\n")
+            self.stats_text.insert(tk.END, f"  🔒 Bloqueados:  {wa_bloqueados}\n")
+            self.stats_text.insert(tk.END, "─" * 22 + "\n")
+            self.stats_text.insert(tk.END, f"SMS\n")
+            self.stats_text.insert(tk.END, f"  ✅ Disponibles: {sms_disponibles}\n")
+            self.stats_text.insert(tk.END, f"  ⚠️ Bloqueados:  {sms_bloqueados}\n")
+
         self.stats_text.config(state='disabled')
