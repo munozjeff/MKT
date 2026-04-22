@@ -1,8 +1,8 @@
 {
-    "version": "1.6.8",
-    "build": "20260421",
-    "release_date": "2026-04-21",
-    "release_notes": "- Nuevo: La página de Google Messages se recarga automáticamente al llegar a la pausa programada entre lotes, liberando memoria del navegador y manteniendo la sesión activa",
+    "version": "1.6.9",
+    "build": "20260422",
+    "release_date": "2026-04-22",
+    "release_notes": "- Fix: MutationObserver JS reactivado en los 3 runners (individual, distribuido, rotación) para detectar RCS incluso en flashes de milisegundos imposibles de capturar con polling Python",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

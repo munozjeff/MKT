@@ -278,9 +278,11 @@ class GoogleMessagesService:
 
     def open_chat(self) -> bool:
         """
-        Hace clic en el botón 'Enviar a XXXXXXXXXX' para abrir el chat.
-        Después espera que el textarea esté listo y selecciona la SIM
-        correspondiente si el dispositivo tiene más de una.
+        Hace clic en el botón 'Enviar a XXXXXXXXXX' para abrir el chat
+        y espera que el textarea esté listo.
+
+        NOTA: La selección de SIM y la verificación RCS se realizan en el
+        runner, DESPUÉS de este método, para poder intercalar el observer.
         """
         try:
             btn = WebDriverWait(self.driver, 15).until(
@@ -306,9 +308,6 @@ class GoogleMessagesService:
                 ))
             )
             time.sleep(1.0)  # pausa para que el DOM de Angular se estabilice
-
-            # Seleccionar SIM si hay más de una disponible
-            self.select_next_sim()
 
             return True
         except Exception as e:
