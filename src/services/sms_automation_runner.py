@@ -129,7 +129,12 @@ class SmsAutomationRunner:
                     time.sleep(interval)
                     if pause_after > 0 and (index + 1) % pause_after == 0:
                         if self.progress_callback:
-                            self.progress_callback(index + 1, total, "Pausa programada...")
+                            self.progress_callback(index + 1, total,
+                                f"⏸ Pausa programada — recargando página...")
+                        self.sms_service.refresh_page()
+                        if self.progress_callback:
+                            self.progress_callback(index + 1, total,
+                                f"⏸ Pausa programada ({pause_after} mensajes enviados)...")
                         time.sleep(60)
 
         except Exception as e:

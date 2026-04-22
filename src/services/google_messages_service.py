@@ -775,6 +775,34 @@ class GoogleMessagesService:
         """Compatibilidad: vuelve a la pantalla principal."""
         self.close_chat()
 
+    def refresh_page(self) -> bool:
+        """
+        Recarga completamente la página de Google Messages (equivale a F5).
+
+        Se usa durante la pausa programada entre lotes para liberar memoria
+        del navegador y asegurar que la sesión siga activa.
+
+        Returns:
+            True  si la página recargó y está lista.
+            False si hubo un error durante la recarga.
+        """
+        try:
+            print("[GoogleMessages] 🔄 Recargando página (pausa entre lotes)...")
+            self.driver.refresh()
+
+            # Esperar a que Google Messages esté listo
+            WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located((
+                    By.CSS_SELECTOR, '[data-e2e-start-button]'
+                ))
+            )
+            time.sleep(1.5)  # pequeña pausa adicional para que el SPA termine de iniciar
+            print("[GoogleMessages] ✅ Página recargada correctamente")
+            return True
+        except Exception as e:
+            print(f"[GoogleMessages] ⚠️ Error al recargar página: {e}")
+            return False
+
     # ──────────────────────────────────────────────────────────────
     # Limpieza
     # ──────────────────────────────────────────────────────────────
