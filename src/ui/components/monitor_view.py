@@ -28,6 +28,12 @@ class MonitorView(ttk.Frame):
         
         # 1. Selector de Perfiles
         ttk.Label(config_frame, text="Perfiles a Monitorear:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(0, 2))
+        ttk.Label(
+            config_frame,
+            text="  Solo se muestran perfiles con WhatsApp disponible (sin etiqueta BLOQUEADO)",
+            font=("Arial", 7),
+            foreground="gray"
+        ).pack(anchor=tk.W, pady=(0, 3))
         
         # Frame contenedor para checkboxes (REDUCIDO)
         self.frame_profiles_container = ttk.Frame(config_frame, borderwidth=1, relief="solid")
@@ -134,14 +140,21 @@ class MonitorView(ttk.Frame):
             self.ent_autoreply_text.config(state="disabled")
     
     def refresh_profiles(self):
-        """Cargar lista de perfiles disponibles."""
-        profiles = self.browser_service.get_available_profiles()
+        """Cargar lista de perfiles con WhatsApp disponible (sin etiqueta BLOQUEADO)."""
+        all_profiles = self.browser_service.get_available_profiles()
         
-        # Obtener tags únicos
+        # Filtrar: solo perfiles donde WhatsApp NO está bloqueado
+        profiles = [
+            p for p in all_profiles
+            if "BLOQUEADO" not in [t.upper() for t in p.tags]
+        ]
+        
+        # Obtener tags únicos (excluyendo las de bloqueo)
         all_tags = set()
         for p in profiles:
             for tag in p.tags:
-                all_tags.add(tag)
+                if tag.upper() not in ("BLOQUEADO", "BLOQUEADO_SMS"):
+                    all_tags.add(tag)
         sorted_tags = sorted(list(all_tags))
         
         # Limpiar checkboxes anteriores

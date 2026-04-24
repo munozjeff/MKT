@@ -1,8 +1,8 @@
 {
-    "version": "1.6.11",
-    "build": "20260422",
-    "release_date": "2026-04-22",
-    "release_notes": "- UI: Panel de estadísticas muestra disponibles/bloqueados por canal (WhatsApp y SMS) en lugar de conteo por etiqueta",
+    "version": "1.6.12",
+    "build": "20260424",
+    "release_date": "2026-04-24",
+    "release_notes": "- Monitor: ahora solo lista perfiles donde WhatsApp est\u00e1 disponible (excluye perfiles bloqueados para WA)",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
