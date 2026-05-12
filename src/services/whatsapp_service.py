@@ -414,31 +414,94 @@ class WhatsAppService:
             print(f"Error al abrir chat: {e}")
             return False
     
+#    def send_text_message(self, message: str) -> bool:
+#        """Envía un mensaje de texto."""
+#        try:
+#            # Esperar explícitamente el footer del chat
+#            parent = self.wait.until(
+#                EC.presence_of_element_located(
+#                    (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
+#                )
+#            )
+#            # Input de mensaje
+#            child = parent.find_element(
+#                By.CSS_SELECTOR,
+#                'p.copyable-text.x15bjb6t.x1n2onr6'
+#            )
+#            # Limpieza rápida
+#            child.send_keys(Keys.CONTROL + "a")
+#            child.send_keys(Keys.DELETE)
+#            
+#            # Escritura rápida
+#            paragraphs = message.split('\n')
+#            for paragraph in paragraphs:
+#                child.send_keys(paragraph)
+#                child.send_keys(Keys.SHIFT + Keys.ENTER)
+#            
+#            return True
+#        except Exception as e:
+#            print(f"Error al enviar mensaje de texto: {e}")
+#            return False
+
     def send_text_message(self, message: str) -> bool:
-        """Envía un mensaje de texto."""
+        """Envía un mensaje de texto compatible con múltiples versiones."""
         try:
-            # Esperar explícitamente el footer del chat
-            parent = self.wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
+            input_box = None
+
+            # ==========================
+            # 🔹 INTENTO 1: Versión nueva
+            # ==========================
+            try:
+                input_box = self.wait.until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, 'div[data-testid="conversation-compose-box-input"]')
+                    )
                 )
-            )
-            # Input de mensaje
-            child = parent.find_element(
-                By.CSS_SELECTOR,
-                'p.copyable-text.x15bjb6t.x1n2onr6'
-            )
-            # Limpieza rápida
-            child.send_keys(Keys.CONTROL + "a")
-            child.send_keys(Keys.DELETE)
-            
-            # Escritura rápida
+            except:
+                pass
+
+            # ==========================
+            # 🔹 INTENTO 2: Versión antigua
+            # ==========================
+            if not input_box:
+                try:
+                    parent = self.wait.until(
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
+                        )
+                    )
+
+                    input_box = parent.find_element(
+                        By.CSS_SELECTOR,
+                        'p.copyable-text.x15bjb6t.x1n2onr6'
+                    )
+                except:
+                    pass
+
+            # ==========================
+            # ❌ Si no encontró nada
+            # ==========================
+            if not input_box:
+                raise Exception("No se encontró el input de mensaje en ninguna versión.")
+
+            # ==========================
+            # ✏️ Escritura
+            # ==========================
+            input_box.click()
+
+            input_box.send_keys(Keys.CONTROL + "a")
+            input_box.send_keys(Keys.DELETE)
+
             paragraphs = message.split('\n')
-            for paragraph in paragraphs:
-                child.send_keys(paragraph)
-                child.send_keys(Keys.SHIFT + Keys.ENTER)
-            
+            for i, paragraph in enumerate(paragraphs):
+                input_box.send_keys(paragraph)
+                if i < len(paragraphs) - 1:
+                    input_box.send_keys(Keys.SHIFT + Keys.ENTER)
+
+            input_box.send_keys(Keys.ENTER)
+
             return True
+
         except Exception as e:
             print(f"Error al enviar mensaje de texto: {e}")
             return False

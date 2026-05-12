@@ -11,27 +11,31 @@ from ...services.contact_service import ContactService
 from ...services.automation_runner import AutomationRunner
 from ...services.distributed_runner import DistributedAutomationRunner
 from ...services.rotation_runner import RotationAutomationRunner
+from ...services.sms_automation_runner import SmsAutomationRunner
+from ...services.distributed_sms_runner import DistributedSmsRunner
+from ...services.rotation_sms_runner import RotationSmsRunner
 from ...utils.file_utils import load_excel
 from ..styles import *
 
 class SendView(ttk.Frame):
     """Vista principal de envío de mensajes."""
     
-    def __init__(self, parent):
+    def __init__(self, parent, channel="WhatsApp"):
         super().__init__(parent)
         self.browser_service = BrowserService()
         self.campaign_service = CampaignService()
         self.contact_service = ContactService()
+        self._channel = channel
         
         self.setup_ui()
         self.load_data()
-        
+        # Aplicar estado inicial del canal (habilita/deshabilita monitor)
+        self.on_channel_change()
+
     def setup_ui(self):
         """Configura la interfaz."""
-        lbl_title = ttk.Label(self, text=BTN_SEND_MESSAGES, font=FONT_TITLE)
-    def setup_ui(self):
-        """Configura la interfaz."""
-        lbl_title = ttk.Label(self, text=BTN_SEND_MESSAGES, font=FONT_TITLE)
+        canal_label = "WhatsApp" if self._channel == "WhatsApp" else "SMS (Google Messages)"
+        lbl_title = ttk.Label(self, text=f"Enviar Mensajes - {canal_label}", font=FONT_TITLE)
         lbl_title.pack(pady=PADDING_MEDIUM)
         
         # Contenedor principal
@@ -48,6 +52,9 @@ class SendView(ttk.Frame):
         
         grid_opts_top = {'padx': 5, 'pady': 5, 'sticky': tk.W}
         
+        # Canal fijado (viene del botón del menú, no se cambia aquí)
+        self.var_channel = tk.StringVar(value=self._channel)
+
         # 0. Selector de Modo
         ttk.Label(top_frame, text="Modo de Envío:").grid(row=0, column=0, **grid_opts_top)
         self.var_mode = tk.StringVar(value="Individual")
@@ -67,7 +74,7 @@ class SendView(ttk.Frame):
         
         # Contenedor para selector de perfiles (Single vs Multi)
         self.frame_profiles = ttk.Frame(top_frame)
-        self.frame_profiles.grid(row=1, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
+        self.frame_profiles.grid(row=2, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
         
         # Modo Individual: Combobox
         self.combo_profiles = ttk.Combobox(self.frame_profiles, state="readonly")
@@ -223,6 +230,15 @@ class SendView(ttk.Frame):
         self.ent_profile_cooldown.insert(0, "60")  # Default 1 hora
         self.ent_profile_cooldown.grid(row=2, column=1, padx=5, pady=2)
         ttk.Label(self.frame_rotation_config, text="(tiempo antes de reutilizar perfil)", font=("Arial", 8)).grid(row=2, column=2, padx=2, pady=2, sticky=tk.W)
+
+        # ── Solo RCS (solo aplica a canal SMS) ──────────────────────────────
+        self.var_only_rcs = tk.BooleanVar(value=False)
+        self.chk_only_rcs = ttk.Checkbutton(
+            right_col,
+            text="📡 Solo RCS (omitir SMS convencional)",
+            variable=self.var_only_rcs
+        )
+        # Se muestra u oculta en on_channel_change()
         
         # === BOTÓN LANZAR (Parte inferior de config_frame, fuera de las columnas) ===
         bottom_frame = ttk.Frame(config_frame)
@@ -273,22 +289,32 @@ class SendView(ttk.Frame):
             var.set(val)
             
     def refresh_profiles(self):
-        profiles = self.browser_service.get_available_profiles()
+        # Perfiles disponibles (no ocupados por otra tarea en curso)
+        available = self.browser_service.get_available_profiles()
+
+        # Filtrar según el estado de bloqueo del canal
+        block_tag = "BLOQUEADO_SMS" if self._channel != "WhatsApp" else "BLOQUEADO"
+        profiles = [
+            p for p in available
+            if block_tag not in [t.upper() for t in p.tags]
+        ]
+
         values = [p.name for p in profiles]
         
-        # Obtener todas las etiquetas únicas
+        # Etiquetas únicas (excluir las de bloqueo que ya tienen columna propia)
+        SKIP_TAGS = {"BLOQUEADO", "BLOQUEADO_SMS"}
         all_tags = set()
         for p in profiles:
             for tag in p.tags:
-                all_tags.add(tag)
+                if tag.upper() not in SKIP_TAGS:
+                    all_tags.add(tag)
         sorted_tags = sorted(list(all_tags))
         
         # Actualizar Combo (Individual)
         self.combo_profiles['values'] = values
-        self.combo_profiles.set('') # Limpiar selección por defecto
+        self.combo_profiles.set('')
             
         # Actualizar Checkboxes (Distribuido)
-        # Limpiar anteriores
         for widget in self.inner_frame_profiles.winfo_children():
             widget.destroy()
         self.profile_vars.clear()
@@ -312,14 +338,17 @@ class SendView(ttk.Frame):
             var = tk.BooleanVar(value=False)
             self.profile_vars[p_name] = var
             
-            # Formato nombre con etiquetas
+            # Formato nombre con etiquetas (excluir las de bloqueo)
             p_obj = next((p for p in profiles if p.name == p_name), None)
             display_text = p_name
-            if p_obj and p_obj.tags:
-                display_text += f" [{', '.join(p_obj.tags)}]"
+            if p_obj:
+                visible_tags = [t for t in p_obj.tags if t.upper() not in SKIP_TAGS]
+                if visible_tags:
+                    display_text += f" [{', '.join(visible_tags)}]"
                 
             chk = ttk.Checkbutton(self.inner_frame_profiles, text=display_text, variable=var)
             chk.pack(anchor="w", padx=5)
+
 
     def select_by_tag(self, profiles):
         """Marca los perfiles que coincidan con la etiqueta seleccionada."""
@@ -365,6 +394,31 @@ class SendView(ttk.Frame):
         """Enable/disable auto-reply text input."""
         enabled = self.var_autoreply_enabled.get()
         self.ent_autoreply_text.config(state="normal" if enabled else "disabled")
+
+    def on_channel_change(self):
+        """Muestra u oculta la sección Monitor según el canal seleccionado.
+        El monitor solo aplica a WhatsApp, no a Google Messages.
+        El checkbox 'Solo RCS' solo aplica a SMS."""
+        is_whatsapp = self.var_channel.get() == "WhatsApp"
+        monitor_state = "normal" if is_whatsapp else "disabled"
+
+        # Habilitar/deshabilitar el checkbox del monitor
+        self.chk_monitor.config(state=monitor_state)
+
+        if not is_whatsapp:
+            # Desactivar monitor y limpiar campos al cambiar a SMS
+            self.var_monitor_enabled.set(False)
+            self.on_monitor_toggle()  # propaga el disable a los campos hijo
+
+        # Indicador visual en la etiqueta del monitor
+        if is_whatsapp:
+            self.chk_monitor.config(text="Activar Monitor")
+            # Ocultar Solo RCS en WhatsApp
+            self.chk_only_rcs.grid_forget()
+        else:
+            self.chk_monitor.config(text="Activar Monitor (solo WhatsApp)")
+            # Mostrar Solo RCS en modo SMS
+            self.chk_only_rcs.grid(row=5, column=0, columnspan=3, padx=5, pady=(8, 2), sticky=tk.W)
             
     def load_excel_file(self):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
@@ -483,6 +537,7 @@ class SendView(ttk.Frame):
             "pause": self.ent_pause.get(),
             "message_type": self.combo_msg_type.get(),
             "campaign_type": self.combo_camp_type.get(),
+            "only_rcs": self.var_only_rcs.get() if not (self.var_channel.get() == "WhatsApp") else False,
         }
         
         # Monitor Configuration
@@ -577,7 +632,36 @@ class SendView(ttk.Frame):
                     messagebox.showerror(MSG_ERROR, "Campaña no encontrada")
                     return
 
-        # 3. Bloquear perfiles
+        # 3. Filtrar perfiles bloqueados para el canal seleccionado
+        is_sms = self._channel != "WhatsApp"
+        all_profiles_objs = self.browser_service.get_all_profiles()
+        block_tag = "BLOQUEADO_SMS" if is_sms else "BLOQUEADO"
+        skipped_blocked = []
+        filtered_profiles = []
+        for p_name in selected_profiles:
+            profile_obj = next((p for p in all_profiles_objs if p.name == p_name), None)
+            if profile_obj:
+                upper_tags = [t.upper() for t in profile_obj.tags]
+                if block_tag in upper_tags:
+                    skipped_blocked.append(p_name)
+                else:
+                    filtered_profiles.append(p_name)
+            else:
+                filtered_profiles.append(p_name)
+
+        if skipped_blocked:
+            ch_label = "SMS (BLOQUEADO_SMS)" if is_sms else "WhatsApp (BLOQUEADO)"
+            msg = (f"Los siguientes perfiles están bloqueados para {ch_label} y serán omitidos:\n\n"
+                   + "\n".join(f"  • {n}" for n in skipped_blocked)
+                   + "\n\n¿Desea continuar con los perfiles disponibles?")
+            if not messagebox.askyesno("Perfiles Bloqueados", msg):
+                return
+            if not filtered_profiles:
+                messagebox.showerror(MSG_ERROR, "No quedan perfiles disponibles para el canal seleccionado.")
+                return
+            selected_profiles = filtered_profiles
+
+        # 4. Bloquear perfiles
         locked_profiles = []
         for p_name in selected_profiles:
             if self.browser_service.lock_profile(p_name):
@@ -593,8 +677,7 @@ class SendView(ttk.Frame):
             self.refresh_profiles()
             return
             
-        # 4. Iniciar Runner
-        all_profiles_objs = self.browser_service.get_all_profiles()
+        # 5. Iniciar Runner
         target_profiles = [p for p in all_profiles_objs if p.name in locked_profiles]
         
         # UI Card - Cada tarea en su propio frame
@@ -634,6 +717,15 @@ class SendView(ttk.Frame):
                     # Widget ya fue destruido
                     task_active['active'] = False
             self.after(0, _update)
+
+        def on_profile_blocked(profile_name):
+            """Llamado cuando un worker detecta QR y bloquea el perfil mid-run."""
+            def _refresh():
+                try:
+                    self.refresh_profiles()
+                except Exception:
+                    pass
+            self.after(0, _refresh)
             
         def on_complete(report_path):
             def _finish():
@@ -651,30 +743,61 @@ class SendView(ttk.Frame):
                     self.refresh_profiles()
             self.after(0, _finish)
             
+        channel = self.var_channel.get()
+        is_sms = (channel == "SMS (Google Messages)")
+
         if mode == "Individual":
-            runner = AutomationRunner(
-                browser_profile=target_profiles[0], # Solo uno
-                config=config,
-                phone_numbers=phones,
-                user_data=user_data,
-                contact_data=contact_data,
-                campaign=campaign,
-                fallback_campaign=fallback_campaign,  # Nueva: campaña de respaldo
-                progress_callback=update_ui,
-                completion_callback=on_complete
-            )
+            if is_sms:
+                runner = SmsAutomationRunner(
+                    browser_profile=target_profiles[0],
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete,
+                    profile_blocked_callback=on_profile_blocked
+                )
+            else:
+                runner = AutomationRunner(
+                    browser_profile=target_profiles[0],
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
         elif mode == "Distribuido":
-            runner = DistributedAutomationRunner(
-                browser_profiles=target_profiles, # Lista de perfiles
-                config=config,
-                phone_numbers=phones,
-                user_data=user_data,
-                contact_data=contact_data,
-                campaign=campaign,
-                fallback_campaign=fallback_campaign,  # Nueva: campaña de respaldo
-                progress_callback=update_ui,
-                completion_callback=on_complete
-            )
+            if is_sms:
+                runner = DistributedSmsRunner(
+                    browser_profiles=target_profiles,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete,
+                    profile_blocked_callback=on_profile_blocked
+                )
+            else:
+                runner = DistributedAutomationRunner(
+                    browser_profiles=target_profiles,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
         else:  # Rotacion
             # Validar parámetros de rotación
             try:
@@ -710,21 +833,38 @@ class SendView(ttk.Frame):
                     self.browser_service.unlock_profile(p_name)
                 messagebox.showerror(MSG_ERROR, "El cooldown no puede ser negativo")
                 return
-            
-            runner = RotationAutomationRunner(
-                browser_profiles=target_profiles,
-                simultaneous_profiles=simultaneous,
-                messages_per_profile=msgs_per_profile,
-                profile_cooldown_minutes=cooldown_minutes,
-                config=config,
-                phone_numbers=phones,
-                user_data=user_data,
-                contact_data=contact_data,
-                campaign=campaign,
-                fallback_campaign=fallback_campaign,
-                progress_callback=update_ui,
-                completion_callback=on_complete
-            )
+
+            if is_sms:
+                runner = RotationSmsRunner(
+                    browser_profiles=target_profiles,
+                    simultaneous_profiles=simultaneous,
+                    messages_per_profile=msgs_per_profile,
+                    profile_cooldown_minutes=cooldown_minutes,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete,
+                    profile_blocked_callback=on_profile_blocked
+                )
+            else:
+                runner = RotationAutomationRunner(
+                    browser_profiles=target_profiles,
+                    simultaneous_profiles=simultaneous,
+                    messages_per_profile=msgs_per_profile,
+                    profile_cooldown_minutes=cooldown_minutes,
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
+                )
         
         btn_cancel = ttk.Button(task_frame, text="Cancelar", command=lambda: self.cancel_task(runner, locked_profiles, task_active))
         btn_cancel.pack(side=tk.RIGHT, padx=5)

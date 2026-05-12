@@ -1,8 +1,8 @@
 {
-    "version": "1.4.9",
-    "build": "20260418",
-    "release_date": "2026-04-18",
-    "release_notes": "- Nueva función: Creación de perfil con nombre temporal si el campo está vacío\n- Nueva función: Ordenamiento y agrupación de perfiles por conjunto de etiquetas\n- Mejora: Exportación incluye nombre y etiquetas, con el mismo orden de agrupación",
+    "version": "1.6.13",
+    "build": "20260512",
+    "release_date": "2026-05-12",
+    "release_notes": "- Corrección envio de mensajes al abrit el chat",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
