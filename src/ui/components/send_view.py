@@ -406,6 +406,10 @@ class SendView(ttk.Frame):
         self.combo_tags.pack(side=tk.LEFT, padx=2)
         self.combo_tags.set("(Todas)")
         self.combo_tags.bind("<<ComboboxSelected>>", lambda e: self.select_by_tag(profiles))
+
+        # Contador de navegadores disponibles para la etiqueta seleccionada
+        self.lbl_tag_count = ttk.Label(self.frame_tag_filter, text="", font=("Arial", 8), foreground="#0066cc")
+        self.lbl_tag_count.pack(side=tk.LEFT, padx=(2, 0))
         
         for p_name in values:
             var = tk.BooleanVar(value=False)
@@ -426,12 +430,14 @@ class SendView(ttk.Frame):
     def select_by_tag(self, profiles):
         """Marca los perfiles que coincidan con la etiqueta seleccionada."""
         tag = self.combo_tags.get()
-        
-        # Si selecciona (Todas), no hacemos nada especial (o podríamos deseleccionar todo? Mejor no tocar para no borrar manual)
+
         if tag == "(Todas)":
+            # Limpiar contador al volver a "(Todas)"
+            if hasattr(self, 'lbl_tag_count'):
+                self.lbl_tag_count.config(text="")
             return
-            
-        # Marcar los coincidentes
+
+        # Marcar los coincidentes y contar
         count = 0
         for p in profiles:
             if tag in p.tags:
@@ -439,16 +445,17 @@ class SendView(ttk.Frame):
                     self.profile_vars[p.name].set(True)
                     count += 1
             else:
-                # Opcional: Desmarcar los que no coinciden? 
-                # El usuario pidió "seleccionar todos los de un grupo", no necesariamente deseleccionar el resto.
-                # Pero para "filtrar" suele esperarse que solo queden esos.
-                # Vamos a desmarcar los que no tengan el tag para que sea una selección limpia del grupo.
                 if p.name in self.profile_vars:
                     self.profile_vars[p.name].set(False)
-        
-        # Feedback visual si no hay coincidencias (raro si viene del combo)
-        if count == 0:
-            pass
+
+        # Actualizar etiqueta de contador
+        if hasattr(self, 'lbl_tag_count'):
+            if count == 0:
+                self.lbl_tag_count.config(text="(sin disponibles)", foreground="#cc0000")
+            elif count == 1:
+                self.lbl_tag_count.config(text="(1 disponible)", foreground="#0066cc")
+            else:
+                self.lbl_tag_count.config(text=f"({count} disponibles)", foreground="#0066cc")
     
     def on_monitor_toggle(self):
         """Enable/disable monitor inputs and auto-reply checkbox."""
