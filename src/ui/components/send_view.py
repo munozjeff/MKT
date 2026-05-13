@@ -11,6 +11,7 @@ from ...services.contact_service import ContactService
 from ...services.automation_runner import AutomationRunner
 from ...services.distributed_runner import DistributedAutomationRunner
 from ...services.rotation_runner import RotationAutomationRunner
+from ...services.human_runner import HumanRunner
 from ...services.sms_automation_runner import SmsAutomationRunner
 from ...services.distributed_sms_runner import DistributedSmsRunner
 from ...services.rotation_sms_runner import RotationSmsRunner
@@ -173,6 +174,78 @@ class SendView(ttk.Frame):
         self.ent_pause = ttk.Entry(left_col, width=10)
         self.ent_pause.insert(0, "10") # Default actualizado
         self.ent_pause.grid(row=9, column=1, **grid_opts)
+
+        # ── Panel Simulador Humano (oculto por defecto) ──────────────────────
+        self.frame_human_config = ttk.LabelFrame(left_col, text="Configuracion Simulador Humano")
+        hcfg = {'padx': 4, 'pady': 3, 'sticky': tk.W}
+
+        ttk.Label(self.frame_human_config, text="Max msgs por ventana:").grid(row=0, column=0, **hcfg)
+        self.ent_human_msgs_window = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_msgs_window.insert(0, "7")
+        self.ent_human_msgs_window.grid(row=0, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="msgs", font=FONT_SMALL).grid(row=0, column=2, **hcfg)
+
+        ttk.Label(self.frame_human_config, text="Ventana de tiempo:").grid(row=1, column=0, **hcfg)
+        self.ent_human_window_min = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_window_min.insert(0, "10")
+        self.ent_human_window_min.grid(row=1, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="minutos", font=FONT_SMALL).grid(row=1, column=2, **hcfg)
+
+        ttk.Label(self.frame_human_config, text="Velocidad escritura min:").grid(row=2, column=0, **hcfg)
+        self.ent_human_typing_min = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_typing_min.insert(0, "40")
+        self.ent_human_typing_min.grid(row=2, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="ms/char", font=FONT_SMALL).grid(row=2, column=2, **hcfg)
+
+        ttk.Label(self.frame_human_config, text="Velocidad escritura max:").grid(row=3, column=0, **hcfg)
+        self.ent_human_typing_max = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_typing_max.insert(0, "150")
+        self.ent_human_typing_max.grid(row=3, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="ms/char", font=FONT_SMALL).grid(row=3, column=2, **hcfg)
+
+        ttk.Label(self.frame_human_config, text="Errores tipograficos:").grid(row=4, column=0, **hcfg)
+        self.ent_human_typo_pct = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_typo_pct.insert(0, "5")
+        self.ent_human_typo_pct.grid(row=4, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="% chars", font=FONT_SMALL).grid(row=4, column=2, **hcfg)
+
+        ttk.Label(self.frame_human_config, text="Pausa larga cada:").grid(row=5, column=0, **hcfg)
+        self.ent_human_pause_every = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_pause_every.insert(0, "15")
+        self.ent_human_pause_every.grid(row=5, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="mensajes", font=FONT_SMALL).grid(row=5, column=2, **hcfg)
+
+        ttk.Label(self.frame_human_config, text="Pausa larga min:").grid(row=6, column=0, **hcfg)
+        self.ent_human_pause_min = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_pause_min.insert(0, "120")
+        self.ent_human_pause_min.grid(row=6, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="seg", font=FONT_SMALL).grid(row=6, column=2, **hcfg)
+
+        ttk.Label(self.frame_human_config, text="Pausa larga max:").grid(row=7, column=0, **hcfg)
+        self.ent_human_pause_max = ttk.Entry(self.frame_human_config, width=7)
+        self.ent_human_pause_max.insert(0, "420")
+        self.ent_human_pause_max.grid(row=7, column=1, **hcfg)
+        ttk.Label(self.frame_human_config, text="seg", font=FONT_SMALL).grid(row=7, column=2, **hcfg)
+
+        self.var_human_warmup = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.frame_human_config, text="Warm-up al inicio (scroll/mouse previo al envio)",
+                        variable=self.var_human_warmup).grid(row=8, column=0, columnspan=3, **hcfg)
+
+        self.var_human_schedule = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self.frame_human_config, text="Respetar horario activo",
+                        variable=self.var_human_schedule,
+                        command=self._on_human_schedule_toggle).grid(row=9, column=0, columnspan=2, **hcfg)
+
+        self.frame_human_sched = ttk.Frame(self.frame_human_config)
+        self.frame_human_sched.grid(row=10, column=0, columnspan=3, padx=4, pady=2, sticky=tk.W)
+        ttk.Label(self.frame_human_sched, text="Desde:").pack(side=tk.LEFT, padx=(0, 2))
+        self.ent_human_start = ttk.Entry(self.frame_human_sched, width=6, state="disabled")
+        self.ent_human_start.insert(0, "07:00")
+        self.ent_human_start.pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(self.frame_human_sched, text="Hasta:").pack(side=tk.LEFT, padx=(0, 2))
+        self.ent_human_end = ttk.Entry(self.frame_human_sched, width=6, state="disabled")
+        self.ent_human_end.insert(0, "21:00")
+        self.ent_human_end.pack(side=tk.LEFT)
         
         # --- COLUMNA DERECHA (Monitor, Auto-Respuesta, Rotación) ---
         
@@ -395,6 +468,13 @@ class SendView(ttk.Frame):
         enabled = self.var_autoreply_enabled.get()
         self.ent_autoreply_text.config(state="normal" if enabled else "disabled")
 
+    def _on_human_schedule_toggle(self):
+        """Habilita/deshabilita los campos de horario activo."""
+        state = "normal" if self.var_human_schedule.get() else "disabled"
+        self.ent_human_start.config(state=state)
+        self.ent_human_end.config(state=state)
+
+
     def on_channel_change(self):
         """Muestra u oculta la sección Monitor según el canal seleccionado.
         El monitor solo aplica a WhatsApp, no a Google Messages.
@@ -442,7 +522,8 @@ class SendView(ttk.Frame):
         self.combo_base_type.grid_forget()
         self.lbl_contact_int.grid_forget()
         self.ent_contact_int.grid_forget()
-        
+        self.frame_human_config.grid_forget()
+
         if val == "Facturas":
             self.lbl_folder.grid(row=6, column=0, padx=5, pady=5, sticky=tk.W)
             self.btn_folder.grid(row=6, column=1, padx=5, pady=5, sticky=tk.W)
@@ -451,6 +532,8 @@ class SendView(ttk.Frame):
             self.lbl_base_type.grid(row=7, column=0, padx=5, pady=5, sticky=tk.W)
             self.combo_base_type.grid(row=7, column=1, padx=5, pady=5, sticky=tk.W)
             self.combo_base_type.set('')
+        elif val == "Simulador Humano":
+            self.frame_human_config.grid(row=10, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
             
     def on_base_type_change(self, event):
         val = self.combo_base_type.get()
@@ -594,8 +677,40 @@ class SendView(ttk.Frame):
                 except ValueError:
                     messagebox.showerror(MSG_ERROR, "Intervalo contacto inválido")
                     return
-        
-        
+
+        # Validacion Simulador Humano
+        human_sim_config = {}
+        if config["message_type"] == "Simulador Humano":
+            if self.var_mode.get() != "Individual":
+                messagebox.showerror(MSG_ERROR, "El Simulador Humano solo esta disponible en modo Individual.")
+                return
+            try:
+                human_sim_config = {
+                    "msgs_per_window":  int(self.ent_human_msgs_window.get()),
+                    "window_minutes":   int(self.ent_human_window_min.get()),
+                    "typing_min_ms":    int(self.ent_human_typing_min.get()),
+                    "typing_max_ms":    int(self.ent_human_typing_max.get()),
+                    "typo_chance":      float(self.ent_human_typo_pct.get()),
+                    "long_pause_every": int(self.ent_human_pause_every.get()),
+                    "long_pause_min_s": int(self.ent_human_pause_min.get()),
+                    "long_pause_max_s": int(self.ent_human_pause_max.get()),
+                    "warmup":           self.var_human_warmup.get(),
+                    "use_schedule":     self.var_human_schedule.get(),
+                    "active_start":     self.ent_human_start.get().strip(),
+                    "active_end":       self.ent_human_end.get().strip(),
+                }
+                if human_sim_config["msgs_per_window"] < 1:
+                    raise ValueError("Mensajes por ventana debe ser >= 1")
+                if human_sim_config["window_minutes"] < 1:
+                    raise ValueError("Ventana de tiempo debe ser >= 1 minuto")
+                if human_sim_config["typing_min_ms"] >= human_sim_config["typing_max_ms"]:
+                    raise ValueError("Velocidad min debe ser menor que max")
+            except ValueError as ve:
+                messagebox.showerror(MSG_ERROR, f"Config Simulador Humano invalida: {ve}")
+                return
+            config["human_sim"] = human_sim_config
+
+
         campaign = None
         fallback_campaign = None
         
@@ -759,6 +874,18 @@ class SendView(ttk.Frame):
                     progress_callback=update_ui,
                     completion_callback=on_complete,
                     profile_blocked_callback=on_profile_blocked
+                )
+            elif config.get("message_type") == "Simulador Humano":
+                runner = HumanRunner(
+                    browser_profile=target_profiles[0],
+                    config=config,
+                    phone_numbers=phones,
+                    user_data=user_data,
+                    contact_data=contact_data,
+                    campaign=campaign,
+                    fallback_campaign=fallback_campaign,
+                    progress_callback=update_ui,
+                    completion_callback=on_complete
                 )
             else:
                 runner = AutomationRunner(

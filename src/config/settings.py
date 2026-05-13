@@ -54,10 +54,28 @@ CAMPAIGN_TYPE_DEFAULT = "Default"
 MESSAGE_TYPE_SIMPLE = "Simple"
 MESSAGE_TYPE_FACTURAS = "Facturas"
 MESSAGE_TYPE_ANTI_SPAM = "Anti Spam"
+MESSAGE_TYPE_HUMAN_SIM = "Simulador Humano"
+
 
 # Tipos de base
 BASE_TYPE_ORIGINAL = "Original"
 BASE_TYPE_CON_INTERVALOS = "Con Intervalos"
+
+
+# ── Simulador Humano: valores por defecto ─────────────────────────────────────
+HUMAN_SIM_MSGS_PER_WINDOW   = 7      # mensajes maximos por ventana de tiempo
+HUMAN_SIM_WINDOW_MINUTES    = 10     # duracion de la ventana (minutos)
+HUMAN_SIM_TYPING_MIN_MS     = 40     # ms minimo entre caracteres
+HUMAN_SIM_TYPING_MAX_MS     = 150    # ms maximo entre caracteres
+HUMAN_SIM_TYPO_CHANCE       = 5      # porcentaje de errores tipograficos
+HUMAN_SIM_LONG_PAUSE_EVERY  = 15     # pausa larga cada N mensajes
+HUMAN_SIM_LONG_PAUSE_MIN_S  = 120    # duracion minima de pausa larga (segundos)
+HUMAN_SIM_LONG_PAUSE_MAX_S  = 420    # duracion maxima de pausa larga (segundos)
+HUMAN_SIM_WARMUP            = True   # calentar sesion al inicio
+HUMAN_SIM_ACTIVE_START      = "07:00" # hora inicio del horario activo
+HUMAN_SIM_ACTIVE_END        = "21:00" # hora fin del horario activo
+HUMAN_SIM_USE_SCHEDULE      = False  # respetar horario activo
+
 
 
 def ensure_directories():

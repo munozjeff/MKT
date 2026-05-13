@@ -1,8 +1,8 @@
 {
-    "version": "1.4.1",
+    "version": "1.5.0",
     "build": "20260513",
     "release_date": "2026-05-13",
-    "release_notes": "- Fix: campo Hora en notificacion ahora muestra la hora real del mensaje (antes mostraba el numero del contacto)\\n- Fix: extraccion de hora via regex - busca patron H:MM entre todas las lineas del chat, descartando el badge de no leidos y el nombre del contacto\\n- Fix: preview del mensaje en notificacion ya no muestra el texto del badge\\n- Mejora filtro auto-respuesta: Condicion A: misma hora que mensaje enviado Y texto >= 70 chars = omitir. Condicion B: texto >= 200 chars = plantilla de empresa = omitir siempre sin importar la hora",
+    "release_notes": "- NUEVO: Modo Simulador Humano para reduccion de riesgo de deteccion y bloqueo\\n- Fingerprinting anti-deteccion: navigator.plugins, languages, platform, window.chrome, hardwareConcurrency, deviceMemory\\n- Escritura caracter a caracter con delays aleatorios y errores tipograficos corregidos\\n- Clics con trayectoria suavizada y offset aleatorio (ActionChains)\\n- Rate Limiter por ventana deslizante: max N mensajes cada M minutos con distribucion aleatoria\\n- Warm-up de sesion: scroll y mouse aleatorio antes de empezar\\n- Scroll idle entre envios para simular actividad humana\\n- Pausas largas periodicas configurables (simulacion de descanso)\\n- Horario activo configurable (pausa automatica fuera de rango)\\n- Panel de configuracion completo en la UI con 11 parametros ajustables\\n- Anti Spam mode sin modificaciones",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }
