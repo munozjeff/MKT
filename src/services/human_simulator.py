@@ -424,3 +424,64 @@ class HumanSimulator:
                 print("[HumanSim] Dentro del horario activo. Reanudando envio.")
                 return True
             time.sleep(60)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Metodos compartidos para usar desde cualquier runner
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def buscar_contacto_humano(self, service, phone: str) -> bool:
+        """
+        Busca un contacto en el campo de busqueda de WhatsApp usando tipeo humano.
+        Funciona en modo 'Nuevo Chat' (p editable) y barra lateral (input html).
+        Retorna True si tuvo exito.
+        """
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.keys import Keys
+
+        try:
+            short_wait = WebDriverWait(service.driver, 10)
+            input_field = short_wait.until(
+                EC.presence_of_element_located((
+                    By.XPATH,
+                    '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
+                    ' | //input[@data-tab="3" and contains(@class,"html-input")]'
+                ))
+            )
+            input_field.send_keys(Keys.CONTROL + "a")
+            input_field.send_keys(Keys.DELETE)
+            self.micro_pausa()
+            self.escribir_como_humano(input_field, phone)
+            time.sleep(random.uniform(0.6, 1.2))
+            return True
+        except Exception as e:
+            print(f"[HumanSim] Error buscando contacto: {e}")
+            return False
+
+    def enviar_mensaje_humano(self, service, message_text: str):
+        """
+        Escribe y envia un mensaje en el chat abierto usando tipeo humano.
+        Usa el mismo input box que WhatsAppService._get_message_input_box().
+        """
+        from selenium.webdriver.common.keys import Keys
+
+        input_box = service._get_message_input_box()
+        if not input_box:
+            raise Exception("[HumanSim] No se encontro el input de mensaje")
+
+        input_box.send_keys(Keys.CONTROL + "a")
+        input_box.send_keys(Keys.DELETE)
+        self.micro_pausa()
+
+        parrafos = message_text.split("\n")
+        for i, parrafo in enumerate(parrafos):
+            self.escribir_como_humano(input_box, parrafo)
+            if i < len(parrafos) - 1:
+                input_box.send_keys(Keys.SHIFT + Keys.ENTER)
+                time.sleep(random.uniform(0.1, 0.3))
+
+        # Pausa final como si revisara el mensaje antes de enviar
+        time.sleep(random.uniform(0.4, 1.2))
+        input_box.send_keys(Keys.ENTER)
+

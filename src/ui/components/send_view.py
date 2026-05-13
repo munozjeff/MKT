@@ -681,9 +681,6 @@ class SendView(ttk.Frame):
         # Validacion Simulador Humano
         human_sim_config = {}
         if config["message_type"] == "Simulador Humano":
-            if self.var_mode.get() != "Individual":
-                messagebox.showerror(MSG_ERROR, "El Simulador Humano solo esta disponible en modo Individual.")
-                return
             try:
                 human_sim_config = {
                     "msgs_per_window":  int(self.ent_human_msgs_window.get()),
