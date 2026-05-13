@@ -1,8 +1,8 @@
 {
-    "version": "1.6.14",
-    "build": "20260512",
-    "release_date": "2026-05-12",
-    "release_notes": "- Fix: compatibilidad con versiones nueva y antigua de WhatsApp Web en send_text_message, send_message_simple y verificación de chat en _enviar_a_contacto (método _get_message_input_box compartido)",
+    "version": "1.4.1",
+    "build": "20260513",
+    "release_date": "2026-05-13",
+    "release_notes": "- Fix: campo Hora en notificacion ahora muestra la hora real del mensaje (antes mostraba el numero del contacto)\\n- Fix: extraccion de hora via regex - busca patron H:MM entre todas las lineas del chat, descartando el badge de no leidos y el nombre del contacto\\n- Fix: preview del mensaje en notificacion ya no muestra el texto del badge\\n- Mejora filtro auto-respuesta: Condicion A: misma hora que mensaje enviado Y texto >= 70 chars = omitir. Condicion B: texto >= 200 chars = plantilla de empresa = omitir siempre sin importar la hora",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

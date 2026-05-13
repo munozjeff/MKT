@@ -85,14 +85,35 @@ class WhatsAppMonitorService:
                             hora = "No disponible"
                             
                             try:
-                                # Intentar extraer preview del texto visible
+                                import re as _re
                                 lines = chat.text.split('\n')
-                                if len(lines) >= 2:
-                                    # Normalmente: [0] Hora, [1] Nombre, [2] Mensaje... varia según layout
-                                    # Estrategia segura: última línea suele ser el mensaje, segunda línea suele ser hora
-                                    preview = lines[-1]
-                                    if len(lines) > 1:
-                                        hora = lines[1]
+                                hora_pattern = _re.compile(r'^\d{1,2}:\d{2}$')
+                                badge_pattern = _re.compile(r'mensaje.*no le[ií]do', _re.IGNORECASE)
+                                
+                                hora_encontrada = "No disponible"
+                                preview_candidatos = []
+                                
+                                for line in lines:
+                                    line_strip = line.strip()
+                                    if not line_strip:
+                                        continue
+                                    if hora_pattern.match(line_strip):
+                                        # Es una hora (ej. "6:09", "18:52")
+                                        hora_encontrada = line_strip
+                                    elif badge_pattern.search(line_strip):
+                                        # Es el texto del badge ("2 mensajes no leídos") → descartar
+                                        pass
+                                    elif line_strip == nombre:
+                                        # Es el nombre del contacto → descartar
+                                        pass
+                                    else:
+                                        # Puede ser el preview del mensaje
+                                        preview_candidatos.append(line_strip)
+                                
+                                hora = hora_encontrada
+                                # El último candidato restante es el preview más reciente
+                                preview = preview_candidatos[-1] if preview_candidatos else "No disponible"
+                                print(f"[Monitor] ⏱ Hora extraída: '{hora}' | Preview: '{preview[:40]}'")
                             except: pass
                             
                             chat_info = {
@@ -729,40 +750,28 @@ Detectado: {chat_info['timestamp']}
                         if texto:
                             texto = texto.strip()
                             if texto:
-                                 # ── Filtro de respuesta automática (doble condición) ──
-                                # Auto-respuesta = hora igual AL mensaje de salida
-                                #                  Y mensaje largo (≥ 70 chars)
-                                # Si solo se cumple UNA condición → se notifica (respuesta real)
+                                # Filtro A: Misma hora + >= 70 chars -> auto-respuesta
+                                # Filtro B: >= 200 chars -> plantilla empresa
                                 hora_igual = (hora_ultimo_salida != "" and hora_entrada == hora_ultimo_salida)
-                                mensaje_largo = len(texto) >= 70
+                                es_largo_normal = len(texto) >= 70
+                                es_extremadamente_largo = len(texto) >= 200
 
-                                if hora_igual and mensaje_largo:
-                                    print(
-                                        f"[Monitor] ⚡ Auto-respuesta detectada "
-                                        f"(hora='{hora_entrada}' igual a salida, {len(texto)} chars ≥ 70) "
-                                        f"→ OMITIENDO: '{texto[:50]}...'"
-                                        if len(texto) > 50 else
-                                        f"[Monitor] ⚡ Auto-respuesta detectada "
-                                        f"(hora='{hora_entrada}' igual a salida, {len(texto)} chars ≥ 70) "
-                                        f"→ OMITIENDO: '{texto}'"
-                                    )
-                                    continue  # No agregar a la lista
+                                if hora_igual and es_largo_normal:
+                                    motivo = texto[:50] + "..." if len(texto) > 50 else texto
+                                    print("[Monitor] Auto-respuesta (hora igual, " + str(len(texto)) + " chars) OMITIENDO")
+                                    continue
 
-                                # Log cuando hora es igual pero mensaje corto (respuesta real)
-                                if hora_igual and not mensaje_largo:
-                                    print(
-                                        f"[Monitor] ✅ Hora igual a salida pero mensaje corto "
-                                        f"({len(texto)} chars < 70) → respuesta real, se notifica"
-                                    )
+                                if es_extremadamente_largo:
+                                    print("[Monitor] Plantilla empresa (" + str(len(texto)) + " chars >= 200) OMITIENDO")
+                                    continue
 
+                                if hora_igual and not es_largo_normal:
+                                    print("[Monitor] Hora igual pero corto (" + str(len(texto)) + " chars) -> respuesta real")
 
-                                mensajes_nuevos.append(f"[{hora_entrada}] {texto}" if hora_entrada else texto)
+                                mensajes_nuevos.append("[" + hora_entrada + "] " + texto if hora_entrada else texto)
 
                                 if len(mensajes_nuevos) >= MAX_MENSAJES_SIN_SALIDA and not hora_ultimo_salida:
-                                    print(
-                                        f"[Monitor] Alcanzado límite de {MAX_MENSAJES_SIN_SALIDA} mensajes "
-                                        f"sin encontrar mensaje de salida. Deteniendo lectura."
-                                    )
+                                    print("[Monitor] Limite alcanzado. Deteniendo.")
                                     break
 
                 except Exception:
