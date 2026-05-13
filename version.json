@@ -1,8 +1,8 @@
 {
-    "version": "1.6.13",
+    "version": "1.6.14",
     "build": "20260512",
     "release_date": "2026-05-12",
-    "release_notes": "- Corrección envio de mensajes al abrit el chat",
+    "release_notes": "- Fix: compatibilidad con versiones nueva y antigua de WhatsApp Web en send_text_message, send_message_simple y verificación de chat en _enviar_a_contacto (método _get_message_input_box compartido)",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

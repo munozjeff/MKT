@@ -314,18 +314,19 @@ class WhatsAppMonitorService:
                 # Presionar ENTER para abrir el primer resultado
                 search_input.send_keys(Keys.ENTER)
 
-                # Verificar si el chat se abrió (aparece el footer con el campo de mensaje)
+                # Verificar si el chat se abrió usando la lógica de doble intento
+                # (versión nueva + versión antigua) compartida con send_text_message
                 try:
-                    msg_wait = WebDriverWait(self.driver, 5)
-                    msg_wait.until(
-                        EC.presence_of_element_located((
-                            By.CSS_SELECTOR, "div._ak1q, div._ak1r"
-                        ))
-                    )
-                    print("[Monitor] ✓ Vía rápida exitosa — chat abierto")
-                    chat_abierto = True
+                    print("REVISANDO SI SE ABRIÓ EL CHAT")
+                    input_verificacion = whatsapp_service._get_message_input_box()
+                    if input_verificacion:
+                        print("[Monitor] ✓ Vía rápida exitosa — chat abierto")
+                        chat_abierto = True
+                    else:
+                        print("[Monitor] ⚠ Chat no se abrió (input no encontrado) → activando flujo normal")
+                        chat_abierto = False
                 except Exception:
-                    print("[Monitor] ⚠ Chat no se abrió en 5s → activando flujo normal")
+                    print("[Monitor] ⚠ Chat no se abrió → activando flujo normal")
                     chat_abierto = False
 
             except Exception as e:

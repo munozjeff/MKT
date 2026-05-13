@@ -443,40 +443,59 @@ class WhatsAppService:
 #            print(f"Error al enviar mensaje de texto: {e}")
 #            return False
 
-    def send_text_message(self, message: str) -> bool:
-        """Envía un mensaje de texto compatible con múltiples versiones."""
-        try:
-            input_box = None
+    def _get_message_input_box(self):
+        """
+        Localiza el campo de entrada de mensajes del chat abierto.
+        Compatible con versiones nuevas y antiguas de WhatsApp Web.
 
-            # ==========================
-            # 🔹 INTENTO 1: Versión nueva
-            # ==========================
+        Intento 1 — Versión nueva:
+            div[data-testid="conversation-compose-box-input"]
+        Intento 2 — Versión antigua:
+            div._ak1q / div._ak1r  →  p.copyable-text.x15bjb6t.x1n2onr6
+
+        Returns:
+            WebElement del input box si se encontró, None si no.
+        """
+        input_box = None
+
+        # ==========================
+        # 🔹 INTENTO 1: Versión nueva
+        # ==========================
+        try:
+            input_box = self.wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, 'div[data-testid="conversation-compose-box-input"]')
+                )
+            )
+        except:
+            pass
+
+        # ==========================
+        # 🔹 INTENTO 2: Versión antigua
+        # ==========================
+        if not input_box:
             try:
-                input_box = self.wait.until(
+                parent = self.wait.until(
                     EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, 'div[data-testid="conversation-compose-box-input"]')
+                        (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
                     )
+                )
+                input_box = parent.find_element(
+                    By.CSS_SELECTOR,
+                    'p.copyable-text.x15bjb6t.x1n2onr6'
                 )
             except:
                 pass
 
-            # ==========================
-            # 🔹 INTENTO 2: Versión antigua
-            # ==========================
-            if not input_box:
-                try:
-                    parent = self.wait.until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
-                        )
-                    )
+        return input_box
 
-                    input_box = parent.find_element(
-                        By.CSS_SELECTOR,
-                        'p.copyable-text.x15bjb6t.x1n2onr6'
-                    )
-                except:
-                    pass
+    def send_text_message(self, message: str) -> bool:
+        """Envía un mensaje de texto compatible con múltiples versiones."""
+        try:
+            # ==========================
+            # 🔍 Localizar input box
+            # ==========================
+            input_box = self._get_message_input_box()
 
             # ==========================
             # ❌ Si no encontró nada
@@ -613,20 +632,18 @@ class WhatsAppService:
     
     def send_message_simple(self) -> bool:
         """
-        Envía un mensaje simple (sin archivo).
-        
+        Presiona Enter en el campo de mensaje para enviar (compatible con todas las versiones).
+
+        Usado como paso final cuando el texto ya fue escrito por send_text_message.
+
         Returns:
             bool: True si se envió correctamente, False si no
         """
         try:
-            # Buscar el campo de entrada
-            parent = self.wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
-                )
-            )
-            child = parent.find_element(By.CSS_SELECTOR,'p.copyable-text.x15bjb6t.x1n2onr6')
-            child.send_keys(Keys.ENTER)
+            input_box = self._get_message_input_box()
+            if not input_box:
+                raise Exception("No se encontró el input de mensaje en ninguna versión.")
+            input_box.send_keys(Keys.ENTER)
             return True
         except Exception as e:
             print(f"Error al enviar mensaje simple: {e}")
