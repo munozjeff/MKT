@@ -55,24 +55,52 @@ class SendView(ttk.Frame):
 
         # ── Canvas scrollable: ocupa todo lo que queda después del botón ──
         _cfg_scrollbar = ttk.Scrollbar(config_frame, orient="vertical")
-        _cfg_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # El scrollbar se empaqueta SOLO cuando el contenido supera el alto del canvas
 
-        _cfg_canvas = tk.Canvas(config_frame, highlightthickness=0,
-                                yscrollcommand=_cfg_scrollbar.set)
+        _cfg_canvas = tk.Canvas(config_frame, highlightthickness=0, bd=0)
         _cfg_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         _cfg_scrollbar.config(command=_cfg_canvas.yview)
 
         scroll_frame = ttk.Frame(_cfg_canvas)
         _cfg_frame_id = _cfg_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
 
-        # Actualizar scrollregion cuando cambia el contenido
+        # Igualar fondo del canvas al del frame (evita area blanca)
+        def _sync_canvas_bg(event=None):
+            try:
+                bg = scroll_frame.winfo_rgb(scroll_frame.cget("background"))
+                hex_bg = "#%04x%04x%04x" % bg
+                _cfg_canvas.configure(bg=hex_bg[:7])
+            except Exception:
+                pass
+        scroll_frame.after(50, _sync_canvas_bg)
+
+        # Autohide: mostrar scrollbar solo cuando el contenido no cabe
+        def _update_scrollbar_vis():
+            try:
+                fh = scroll_frame.winfo_reqheight()
+                ch = _cfg_canvas.winfo_height()
+                if fh > ch:
+                    if not _cfg_scrollbar.winfo_ismapped():
+                        _cfg_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, before=_cfg_canvas)
+                        _cfg_canvas.configure(yscrollcommand=_cfg_scrollbar.set)
+                else:
+                    if _cfg_scrollbar.winfo_ismapped():
+                        _cfg_scrollbar.pack_forget()
+                        _cfg_canvas.configure(yscrollcommand="")
+                        _cfg_canvas.yview_moveto(0)
+            except Exception:
+                pass
+
+        # Actualizar scrollregion y visibilidad cuando cambia el contenido
         def _cfg_on_frame_configure(event):
             _cfg_canvas.configure(scrollregion=_cfg_canvas.bbox("all"))
+            _update_scrollbar_vis()
         scroll_frame.bind("<Configure>", _cfg_on_frame_configure)
 
         # Ancho del frame interior sigue al canvas
         def _cfg_on_canvas_configure(event):
             _cfg_canvas.itemconfig(_cfg_frame_id, width=event.width)
+            _update_scrollbar_vis()
         _cfg_canvas.bind("<Configure>", _cfg_on_canvas_configure)
 
         # Scroll con rueda del mouse (solo cuando el cursor está sobre el área de config)
@@ -206,14 +234,16 @@ class SendView(ttk.Frame):
         self.ent_contact_int = ttk.Entry(left_col, width=10)
         
         # 4. Tiempos
-        ttk.Label(left_col, text=LBL_INTERVAL).grid(row=8, column=0, **grid_opts)
+        self.lbl_interval = ttk.Label(left_col, text=LBL_INTERVAL)
+        self.lbl_interval.grid(row=8, column=0, **grid_opts)
         self.ent_interval = ttk.Entry(left_col, width=10)
-        self.ent_interval.insert(0, "50") # Default actualizado
+        self.ent_interval.insert(0, "50")
         self.ent_interval.grid(row=8, column=1, **grid_opts)
-        
-        ttk.Label(left_col, text=LBL_PAUSE).grid(row=9, column=0, **grid_opts)
+
+        self.lbl_pause = ttk.Label(left_col, text=LBL_PAUSE)
+        self.lbl_pause.grid(row=9, column=0, **grid_opts)
         self.ent_pause = ttk.Entry(left_col, width=10)
-        self.ent_pause.insert(0, "10") # Default actualizado
+        self.ent_pause.insert(0, "10")
         self.ent_pause.grid(row=9, column=1, **grid_opts)
 
         # ── Panel Simulador Humano (oculto por defecto) ──────────────────────
@@ -567,6 +597,12 @@ class SendView(ttk.Frame):
         self.ent_contact_int.grid_forget()
         self.frame_human_config.grid_forget()
 
+        # Restaurar Duracion y Pausa (pueden haber sido ocultados por Simulador Humano)
+        self.lbl_interval.grid(row=8, column=0, padx=5, pady=5, sticky=tk.W)
+        self.ent_interval.grid(row=8, column=1, padx=5, pady=5, sticky=tk.W)
+        self.lbl_pause.grid(row=9, column=0, padx=5, pady=5, sticky=tk.W)
+        self.ent_pause.grid(row=9, column=1, padx=5, pady=5, sticky=tk.W)
+
         if val == "Facturas":
             self.lbl_folder.grid(row=6, column=0, padx=5, pady=5, sticky=tk.W)
             self.btn_folder.grid(row=6, column=1, padx=5, pady=5, sticky=tk.W)
@@ -576,8 +612,14 @@ class SendView(ttk.Frame):
             self.combo_base_type.grid(row=7, column=1, padx=5, pady=5, sticky=tk.W)
             self.combo_base_type.set('')
         elif val == "Simulador Humano":
+            # Ocultar Duracion y Pausa: el Simulador Humano los reemplaza con
+            # 'Max msgs/ventana + Ventana de tiempo' y 'Pausa larga cada N msgs'
+            self.lbl_interval.grid_remove()
+            self.ent_interval.grid_remove()
+            self.lbl_pause.grid_remove()
+            self.ent_pause.grid_remove()
             self.frame_human_config.grid(row=10, column=0, columnspan=3, padx=5, pady=5, sticky="ew")
-            
+
     def on_base_type_change(self, event):
         val = self.combo_base_type.get()
         if val == "Con Intervalos":

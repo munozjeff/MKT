@@ -462,26 +462,75 @@ class HumanSimulator:
     def enviar_mensaje_humano(self, service, message_text: str):
         """
         Escribe y envia un mensaje en el chat abierto usando tipeo humano.
-        Usa el mismo input box que WhatsAppService._get_message_input_box().
+
+        IMPORTANTE: usa driver.switch_to.active_element para cada send_keys
+        posterior al primer clic, porque WhatsApp Web recrea el nodo <p>
+        del contenteditable tras cada SHIFT+ENTER, dejando obsoleta cualquier
+        referencia directa al input_box (StaleElementReferenceException).
         """
         from selenium.webdriver.common.keys import Keys
 
+        # 1. Obtener el input box y hacer UN SOLO clic para enfocarlo
         input_box = service._get_message_input_box()
         if not input_box:
             raise Exception("[HumanSim] No se encontro el input de mensaje")
 
+        input_box.click()
         input_box.send_keys(Keys.CONTROL + "a")
         input_box.send_keys(Keys.DELETE)
         self.micro_pausa()
 
-        parrafos = message_text.split("\n")
-        for i, parrafo in enumerate(parrafos):
-            self.escribir_como_humano(input_box, parrafo)
-            if i < len(parrafos) - 1:
-                input_box.send_keys(Keys.SHIFT + Keys.ENTER)
-                time.sleep(random.uniform(0.1, 0.3))
+        # 2. Escribir caracter a caracter usando active_element
+        #    (siempre apunta al elemento enfocado actual, nunca queda obsoleto)
+        typing_min = self.cfg.get("typing_min_ms", 40) / 1000.0
+        typing_max = self.cfg.get("typing_max_ms", 150) / 1000.0
+        typo_chance = self.cfg.get("typo_chance", 5) / 100.0
 
-        # Pausa final como si revisara el mensaje antes de enviar
+        vecinos = {
+            'a': 'sq', 'b': 'vn', 'c': 'xv', 'd': 'sf', 'e': 'wr',
+            'f': 'dg', 'g': 'fh', 'h': 'gj', 'i': 'uo', 'j': 'hk',
+            'k': 'jl', 'l': 'k', 'm': 'n', 'n': 'bm', 'o': 'ip',
+            'p': 'o', 'q': 'wa', 'r': 'et', 's': 'ad', 't': 'ry',
+            'u': 'yi', 'v': 'cb', 'w': 'qe', 'x': 'zc', 'y': 'tu',
+            'z': 'x',
+        }
+
+        chars = list(message_text)
+        total = len(chars)
+
+        for idx, char in enumerate(chars):
+            # Pausa pensativa a mitad del texto
+            if idx == total // 2 and total > 20:
+                if random.random() < 0.3:
+                    time.sleep(random.uniform(0.8, 2.5))
+
+            if char == '\n':
+                # Salto de linea dentro del mensaje: SHIFT+ENTER
+                # NO usar input_box (puede estar obsoleto tras el SHIFT+ENTER anterior)
+                service.driver.switch_to.active_element.send_keys(Keys.SHIFT + Keys.ENTER)
+                time.sleep(random.uniform(0.10, 0.28))
+                continue
+
+            # Error tipografico ocasional
+            if char.isalpha() and random.random() < typo_chance:
+                char_lower = char.lower()
+                posibles = vecinos.get(char_lower, "")
+                if posibles:
+                    error_char = random.choice(posibles)
+                    if char.isupper():
+                        error_char = error_char.upper()
+                    service.driver.switch_to.active_element.send_keys(error_char)
+                    time.sleep(random.uniform(0.15, 0.45))
+                    service.driver.switch_to.active_element.send_keys(Keys.BACKSPACE)
+                    time.sleep(random.uniform(0.10, 0.30))
+
+            # Caracter correcto
+            service.driver.switch_to.active_element.send_keys(char)
+            delay = random.uniform(typing_min, typing_max)
+            if char == ' ':
+                delay *= random.uniform(0.8, 1.5)
+            time.sleep(delay)
+
+        # 3. Pausa final (simula revision del mensaje) y ENTER para enviar
         time.sleep(random.uniform(0.4, 1.2))
-        input_box.send_keys(Keys.ENTER)
-
+        service.driver.switch_to.active_element.send_keys(Keys.ENTER)
