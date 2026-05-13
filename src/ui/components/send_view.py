@@ -46,9 +46,50 @@ class SendView(ttk.Frame):
         # -- Panel Configuración (Izquierda) --
         config_frame = ttk.LabelFrame(main_frame, text="Configuración de Envío")
         config_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PADDING_MEDIUM))
-        
+
+        # ── Botón LANZAR: empaquetado primero (BOTTOM) para que quede anclado al fondo ──
+        bottom_frame = ttk.Frame(config_frame)
+        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=10)
+        self.btn_launch = ttk.Button(bottom_frame, text="LANZAR TAREA", command=self.launch_task)
+        self.btn_launch.pack(fill=tk.X)
+
+        # ── Canvas scrollable: ocupa todo lo que queda después del botón ──
+        _cfg_scrollbar = ttk.Scrollbar(config_frame, orient="vertical")
+        _cfg_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        _cfg_canvas = tk.Canvas(config_frame, highlightthickness=0,
+                                yscrollcommand=_cfg_scrollbar.set)
+        _cfg_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        _cfg_scrollbar.config(command=_cfg_canvas.yview)
+
+        scroll_frame = ttk.Frame(_cfg_canvas)
+        _cfg_frame_id = _cfg_canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+
+        # Actualizar scrollregion cuando cambia el contenido
+        def _cfg_on_frame_configure(event):
+            _cfg_canvas.configure(scrollregion=_cfg_canvas.bbox("all"))
+        scroll_frame.bind("<Configure>", _cfg_on_frame_configure)
+
+        # Ancho del frame interior sigue al canvas
+        def _cfg_on_canvas_configure(event):
+            _cfg_canvas.itemconfig(_cfg_frame_id, width=event.width)
+        _cfg_canvas.bind("<Configure>", _cfg_on_canvas_configure)
+
+        # Scroll con rueda del mouse (solo cuando el cursor está sobre el área de config)
+        def _cfg_scroll(event):
+            _cfg_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _cfg_enter(event):
+            _cfg_canvas.bind_all("<MouseWheel>", _cfg_scroll)
+
+        def _cfg_leave(event):
+            _cfg_canvas.unbind_all("<MouseWheel>")
+
+        _cfg_canvas.bind("<Enter>", _cfg_enter)
+        _cfg_canvas.bind("<Leave>", _cfg_leave)
+
         # === SECCIÓN SUPERIOR (Ancho Completo) ===
-        top_frame = ttk.Frame(config_frame)
+        top_frame = ttk.Frame(scroll_frame)
         top_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
         
         grid_opts_top = {'padx': 5, 'pady': 5, 'sticky': tk.W}
@@ -110,7 +151,7 @@ class SendView(ttk.Frame):
         
         
         # === SECCIÓN INFERIOR (Dos Columnas) ===
-        columns_frame = ttk.Frame(config_frame)
+        columns_frame = ttk.Frame(scroll_frame)
         columns_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         left_col = ttk.Frame(columns_frame)
@@ -313,13 +354,8 @@ class SendView(ttk.Frame):
         )
         # Se muestra u oculta en on_channel_change()
         
-        # === BOTÓN LANZAR (Parte inferior de config_frame, fuera de las columnas) ===
-        bottom_frame = ttk.Frame(config_frame)
-        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=10)
-        
-        self.btn_launch = ttk.Button(bottom_frame, text="LANZAR TAREA", command=self.launch_task)
-        self.btn_launch.pack(fill=tk.X)
-        
+        # (botón LANZAR ya fue creado arriba, anclado al BOTTOM de config_frame)
+
         # -- Panel Tareas Activas (Derecha) --
         tasks_frame = ttk.LabelFrame(main_frame, text="Tareas Activas")
         tasks_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
