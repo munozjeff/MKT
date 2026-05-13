@@ -15,6 +15,7 @@ from .report_service import ReportService
 from ..utils.message_templates import generate_random_message, replace_variables
 from ..models.campaign import Campaign
 from ..utils.file_utils import verify_pdf_file
+from .human_simulator import HumanSimulator, RateLimiter
 
 
 class RotationAutomationRunner:
@@ -295,7 +296,20 @@ class RotationAutomationRunner:
                 return  # El master iniciará otro perfil (con otro perfil disponible)
             
             print(f"[{profile.name}] Listo para enviar.")
-            
+
+            # ── Simulador Humano: configurar por worker ──────────────────────────
+            hs_cfg = self.config.get("human_sim")
+            sim = None
+            rate_limiter = None
+            if hs_cfg:
+                sim = HumanSimulator(service.driver, hs_cfg)
+                sim.inyectar_fingerprints()
+                rate_limiter = RateLimiter(
+                    int(hs_cfg.get("msgs_per_window", 7)),
+                    int(hs_cfg.get("window_minutes", 10))
+                )
+                sim.calentar_sesion()
+
             # Inicializar monitor si está configurado
             monitor_group = self.config.get("monitor_group", "")
             monitor_backup = self.config.get("monitor_backup", "")
@@ -310,48 +324,81 @@ class RotationAutomationRunner:
             
             # 3. Procesar mensajes hasta límite o cola vacía
             messages_sent = 0
-            
-            while (not self.stop_event.is_set() and 
+
+            while (not self.stop_event.is_set() and
                    messages_sent < self.max_messages_per_profile):
-                
+
                 try:
-                    # Timeout corto para permitir chequear stop_event
                     current_phone = self.phone_queue.get(timeout=2)
                 except queue.Empty:
-                    # Cola vacía, terminar worker
                     break
-                
-                # MONITOREAR MENSAJES NUEVOS ANTES DE CADA ENVÍO
+
+                # Horario activo (Simulador Humano)
+                if sim:
+                    sim.esperar_si_fuera_horario()
+                if self.stop_event.is_set():
+                    break
+
+                # Rate Limiter (Simulador Humano)
+                if sim and rate_limiter:
+                    espera = rate_limiter.tiempo_hasta_siguiente()
+                    if espera > 0:
+                        t0 = time.time()
+                        while time.time() - t0 < espera:
+                            if self.stop_event.is_set():
+                                break
+                            restante = espera - (time.time() - t0)
+                            sim.scroll_idle(min(restante, 4))
+                if self.stop_event.is_set():
+                    break
+
+                # MONITOREAR MENSAJES NUEVOS ANTES DE CADA ENVIO
                 monitor_time = 0
                 if monitor_service:
                     try:
                         base_interval = int(self.config.get("interval", 20))
-                        max_monitor_time = min(30, base_interval // 2)  # Máximo 30 seg para procesar múltiples chats
-                        auto_reply_text = self.config.get("auto_reply_text")  # Extraer auto-respuesta
+                        max_monitor_time = min(30, base_interval // 2)
+                        auto_reply_text = self.config.get("auto_reply_text")
                         monitor_time = monitor_service.monitorear_y_notificar(
-                            service, 
+                            service,
                             max_time=max_monitor_time,
                             auto_reply_text=auto_reply_text
                         )
                         if monitor_time > 0:
-                            print(f"[{profile.name}] ⏱ Tiempo de monitoreo: {monitor_time:.1f}s")
+                            print(f"[{profile.name}] Tiempo de monitoreo: {monitor_time:.1f}s")
                     except Exception as e:
                         print(f"[{profile.name}] Error en monitoreo: {e}")
-                
+
                 # Procesar mensaje
-                self._process_single_message(service, current_phone, profile.name)
+                self._process_single_message(service, current_phone, profile.name, sim)
                 messages_sent += 1
-                
+
                 with self.pool_lock:
                     self.profile_message_counts[profile.name] = messages_sent
-                
+
+                # Registrar envio en rate limiter
+                if rate_limiter:
+                    rate_limiter.registrar_envio()
+
+                # Pausa larga si corresponde (Simulador Humano)
+                if sim:
+                    sim.pausa_larga_si_toca()
+
                 # Pausa entre mensajes
                 if not self.stop_event.is_set():
                     base_interval = int(self.config.get("interval", 20))
-                    # Restar el tiempo del monitoreo
                     adjusted_interval = max(1, base_interval - int(monitor_time))
-                    sleep_time = random.uniform(adjusted_interval * 0.8, adjusted_interval * 1.2)
-                    time.sleep(sleep_time)
+                    if sim:
+                        sleep_time = random.uniform(adjusted_interval * 0.7, adjusted_interval * 1.5)
+                        t0 = time.time()
+                        while time.time() - t0 < sleep_time:
+                            if self.stop_event.is_set():
+                                break
+                            restante = sleep_time - (time.time() - t0)
+                            sim.scroll_idle(min(restante, 3))
+                    else:
+                        sleep_time = random.uniform(adjusted_interval * 0.8, adjusted_interval * 1.2)
+                        time.sleep(sleep_time)
             
             print(f"[{profile.name}] Completado. Mensajes enviados: {messages_sent}")
             
@@ -404,7 +451,7 @@ class RotationAutomationRunner:
             time.sleep(1)
         return False
     
-    def _process_single_message(self, service, phone, profile_name):
+    def _process_single_message(self, service, phone, profile_name, sim=None):
         """Procesa un solo mensaje usando el servicio dado."""
         status = "Fallido"
         
@@ -507,26 +554,45 @@ class RotationAutomationRunner:
                         if self.campaign.image:
                             image_path = self.campaign.image
                 
-                # Flujo de Envío
+                # Flujo de Envio
                 from selenium.webdriver.common.keys import Keys
-                
+                if sim:
+                    sim.micro_pausa()
+
                 if image_path and os.path.exists(image_path):
                     if service.attach_file(image_path):
                         if message_text:
-                            for line in message_text.split('\n'):
-                                service.driver.switch_to.active_element.send_keys(line)
-                                service.driver.switch_to.active_element.send_keys(
-                                    Keys.SHIFT + Keys.ENTER
-                                )
+                            if sim:
+                                try:
+                                    caption = service.driver.switch_to.active_element
+                                    sim.escribir_como_humano(caption, message_text)
+                                except Exception:
+                                    for line in message_text.split('\n'):
+                                        service.driver.switch_to.active_element.send_keys(line)
+                                        service.driver.switch_to.active_element.send_keys(
+                                            Keys.SHIFT + Keys.ENTER
+                                        )
+                            else:
+                                for line in message_text.split('\n'):
+                                    service.driver.switch_to.active_element.send_keys(line)
+                                    service.driver.switch_to.active_element.send_keys(
+                                        Keys.SHIFT + Keys.ENTER
+                                    )
                         service.send_attached_file()
                     else:
                         if message_text:
-                            service.send_text_message(message_text)
-                            service.send_message_simple()
+                            if sim:
+                                sim.enviar_mensaje_humano(service, message_text)
+                            else:
+                                service.send_text_message(message_text)
+                                service.send_message_simple()
                 else:
                     if message_text:
-                        service.send_text_message(message_text)
-                        service.send_message_simple()
+                        if sim:
+                            sim.enviar_mensaje_humano(service, message_text)
+                        else:
+                            service.send_text_message(message_text)
+                            service.send_message_simple()
                 
                 status = "Enviado"
                 if attempt_index > 0:
