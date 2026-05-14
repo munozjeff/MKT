@@ -178,76 +178,75 @@ class SendView(ttk.Frame):
         self.profile_vars = {} # {profile_name: BooleanVar}
         
         
-        # === SECCIÓN INFERIOR (Dos Columnas) ===
-        columns_frame = ttk.Frame(scroll_frame)
-        columns_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # === SECCIÓN CONFIGURACIÓN (Una Columna - se adapta a cualquier ancho) ===
+        cfg_frame = ttk.Frame(scroll_frame)
+        cfg_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        cfg_frame.columnconfigure(0, weight=0)
+        cfg_frame.columnconfigure(1, weight=1)
+        cfg_frame.columnconfigure(2, weight=0)
+
+        grid_opts = {'padx': 5, 'pady': 3, 'sticky': tk.W}
+        grid_E   = {'padx': 5, 'pady': 3, 'sticky': tk.EW}
         
-        left_col = ttk.Frame(columns_frame)
-        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-        
-        right_col = ttk.Frame(columns_frame)
-        right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
-        
-        grid_opts = {'padx': 5, 'pady': 5, 'sticky': tk.W}
-        
-        # --- COLUMNA IZQUIERDA (Archivo, Mensaje, Tiempos) ---
-        
-        # 2. Archivo Excel
-        ttk.Label(left_col, text="Archivo Excel:").grid(row=0, column=0, **grid_opts)
-        self.lbl_file = ttk.Label(left_col, text="No seleccionado", foreground="gray")
+        # --- CAMPOS PRINCIPALES (rows 0-10) ---
+
+        # Archivo Excel (row 0)
+        ttk.Label(cfg_frame, text="Archivo Excel:").grid(row=0, column=0, **grid_opts)
+        self.lbl_file = ttk.Label(cfg_frame, text="No seleccionado", foreground="gray")
         self.lbl_file.grid(row=0, column=1, **grid_opts)
-        ttk.Button(left_col, text="Cargar", command=self.load_excel_file).grid(row=0, column=2, padx=2)
-        
-        # 3. Tipo de Mensaje / Campaña
-        ttk.Label(left_col, text=LBL_MESSAGE_TYPE).grid(row=1, column=0, **grid_opts)
-        self.combo_msg_type = ttk.Combobox(left_col, values=MESSAGE_TYPES, state="readonly")
-        self.combo_msg_type.grid(row=1, column=1, **grid_opts)
+        ttk.Button(cfg_frame, text="Cargar", command=self.load_excel_file).grid(row=0, column=2, padx=2)
+
+        # Tipo Mensaje (row 1)
+        ttk.Label(cfg_frame, text=LBL_MESSAGE_TYPE).grid(row=1, column=0, **grid_opts)
+        self.combo_msg_type = ttk.Combobox(cfg_frame, values=MESSAGE_TYPES, state="readonly")
+        self.combo_msg_type.grid(row=1, column=1, **grid_E)
         self.combo_msg_type.bind("<<ComboboxSelected>>", self.on_msg_type_change)
-        
-        ttk.Label(left_col, text=LBL_CAMPAIGN_TYPE).grid(row=2, column=0, **grid_opts)
-        self.combo_camp_type = ttk.Combobox(left_col, values=CAMPAIGN_TYPES, state="readonly")
-        self.combo_camp_type.grid(row=2, column=1, **grid_opts)
+
+        # Tipo Campaña (row 2)
+        ttk.Label(cfg_frame, text=LBL_CAMPAIGN_TYPE).grid(row=2, column=0, **grid_opts)
+        self.combo_camp_type = ttk.Combobox(cfg_frame, values=CAMPAIGN_TYPES, state="readonly")
+        self.combo_camp_type.grid(row=2, column=1, **grid_E)
         self.combo_camp_type.bind("<<ComboboxSelected>>", self.on_camp_type_change)
-        
-        # Selector de campaña principal (Predeterminada o Personalizada)
-        self.lbl_camp_select = ttk.Label(left_col, text="Campaña:")
+
+        # Campaña (row 3) — reposicionada dinámicamente por on_camp_type_change
+        self.lbl_camp_select = ttk.Label(cfg_frame, text="Campaña:")
         self.lbl_camp_select.grid(row=3, column=0, **grid_opts)
-        self.combo_campaign = ttk.Combobox(left_col, state="readonly")
-        self.combo_campaign.grid(row=3, column=1, **grid_opts)
-        
-        # Selector de campaña personalizada (solo visible cuando tipo = Personalizada)
-        self.lbl_custom_campaign = ttk.Label(left_col, text="Campaña Personalizada:")
-        self.combo_custom_campaign = ttk.Combobox(left_col, state="readonly")
-        
-        # Carpeta Facturas (Oculto)
-        self.lbl_folder = ttk.Label(left_col, text="Carpeta Facturas:")
-        self.btn_folder = ttk.Button(left_col, text="Seleccionar", command=self.select_folder)
-        self.lbl_folder_path = ttk.Label(left_col, text="", font=FONT_SMALL)
-        
-        # Tipo de Base (Oculto)
-        self.lbl_base_type = ttk.Label(left_col, text=LBL_BASE_TYPE)
-        self.combo_base_type = ttk.Combobox(left_col, values=BASE_TYPES, state="readonly")
+        self.combo_campaign = ttk.Combobox(cfg_frame, state="readonly")
+        self.combo_campaign.grid(row=3, column=1, **grid_E)
+
+        # Campaña Personalizada (oculta)
+        self.lbl_custom_campaign = ttk.Label(cfg_frame, text="Campaña Personalizada:")
+        self.combo_custom_campaign = ttk.Combobox(cfg_frame, state="readonly")
+
+        # Carpeta Facturas (oculta)
+        self.lbl_folder = ttk.Label(cfg_frame, text="Carpeta Facturas:")
+        self.btn_folder = ttk.Button(cfg_frame, text="Seleccionar", command=self.select_folder)
+        self.lbl_folder_path = ttk.Label(cfg_frame, text="", font=FONT_SMALL)
+
+        # Tipo de Base (oculto)
+        self.lbl_base_type = ttk.Label(cfg_frame, text=LBL_BASE_TYPE)
+        self.combo_base_type = ttk.Combobox(cfg_frame, values=BASE_TYPES, state="readonly")
         self.combo_base_type.bind("<<ComboboxSelected>>", self.on_base_type_change)
-        
-        # Intervalo Contacto (Oculto)
-        self.lbl_contact_int = ttk.Label(left_col, text=LBL_CONTACT_INTERVAL)
-        self.ent_contact_int = ttk.Entry(left_col, width=10)
-        
-        # 4. Tiempos
-        self.lbl_interval = ttk.Label(left_col, text=LBL_INTERVAL)
+
+        # Intervalo Contacto (oculto)
+        self.lbl_contact_int = ttk.Label(cfg_frame, text=LBL_CONTACT_INTERVAL)
+        self.ent_contact_int = ttk.Entry(cfg_frame, width=10)
+
+        # Tiempos (rows 8, 9)
+        self.lbl_interval = ttk.Label(cfg_frame, text=LBL_INTERVAL)
         self.lbl_interval.grid(row=8, column=0, **grid_opts)
-        self.ent_interval = ttk.Entry(left_col, width=10)
+        self.ent_interval = ttk.Entry(cfg_frame, width=10)
         self.ent_interval.insert(0, "50")
         self.ent_interval.grid(row=8, column=1, **grid_opts)
 
-        self.lbl_pause = ttk.Label(left_col, text=LBL_PAUSE)
+        self.lbl_pause = ttk.Label(cfg_frame, text=LBL_PAUSE)
         self.lbl_pause.grid(row=9, column=0, **grid_opts)
-        self.ent_pause = ttk.Entry(left_col, width=10)
+        self.ent_pause = ttk.Entry(cfg_frame, width=10)
         self.ent_pause.insert(0, "10")
         self.ent_pause.grid(row=9, column=1, **grid_opts)
 
-        # ── Panel Simulador Humano (oculto por defecto) ──────────────────────
-        self.frame_human_config = ttk.LabelFrame(left_col, text="Configuracion Simulador Humano")
+        # Panel Simulador Humano (row 10, oculto por defecto)
+        self.frame_human_config = ttk.LabelFrame(cfg_frame, text="Configuracion Simulador Humano")
         hcfg = {'padx': 4, 'pady': 3, 'sticky': tk.W}
 
         ttk.Label(self.frame_human_config, text="Max msgs por ventana:").grid(row=0, column=0, **hcfg)
@@ -318,67 +317,87 @@ class SendView(ttk.Frame):
         self.ent_human_end.insert(0, "21:00")
         self.ent_human_end.pack(side=tk.LEFT)
         
-        # --- COLUMNA DERECHA (Monitor, Auto-Respuesta, Rotación) ---
-        
-        # 5. Monitor de Mensajes Nuevos
+        # --- MONITOR Y AUTO-RESPUESTA (rows 12-20, debajo de los campos principales) ---
+        # Separador visual antes de la sección Monitor
+        ttk.Separator(cfg_frame, orient="horizontal").grid(
+            row=11, column=0, columnspan=3, sticky="ew", padx=5, pady=(8, 2))
+
+        # Monitor (row 12)
         self.var_monitor_enabled = tk.BooleanVar(value=False)
         self.chk_monitor = ttk.Checkbutton(
-            right_col, 
-            text="Activar Monitor", 
+            cfg_frame,
+            text="Activar Monitor",
             variable=self.var_monitor_enabled,
             command=self.on_monitor_toggle
         )
-        self.chk_monitor.grid(row=0, column=0, columnspan=3, **grid_opts)
-        
-        # Campo de Grupo (Prioridad)
-        ttk.Label(right_col, text="🥇 Grupo Notif. (prioridad):").grid(row=1, column=0, **grid_opts)
-        self.ent_monitor_group = ttk.Entry(right_col, width=22, state="disabled")
-        self.ent_monitor_group.grid(row=1, column=1, **grid_opts)
-        ttk.Label(right_col, text="(nombre exacto del grupo)", font=("Arial", 8)).grid(row=1, column=2, padx=2, sticky=tk.W)
-        
-        # Campo de Celular Respaldo
-        ttk.Label(right_col, text="🥈 Celular Respaldo:").grid(row=2, column=0, **grid_opts)
-        self.ent_monitor_backup = ttk.Entry(right_col, width=22, state="disabled")
-        self.ent_monitor_backup.grid(row=2, column=1, **grid_opts)
-        ttk.Label(right_col, text="(Ej: +573001234567)", font=("Arial", 8)).grid(row=2, column=2, padx=2, sticky=tk.W)
-        
-        # 6. Auto-Respuesta (solo si Monitor activo)
+        self.chk_monitor.grid(row=12, column=0, columnspan=2, **grid_opts)
+
+        # Destinos de Notificación (row 13-14) — multilínea con botón [+]
+        lbl_targets_frame = ttk.Frame(cfg_frame)
+        lbl_targets_frame.grid(row=13, column=0, columnspan=3, sticky="ew", padx=5, pady=(4, 0))
+        ttk.Label(lbl_targets_frame, text="🎯 Destinos de Notificación:").pack(side=tk.LEFT)
+        ttk.Button(lbl_targets_frame, text=" + ", width=3,
+                   command=self._add_monitor_target).pack(side=tk.RIGHT, padx=(4, 0))
+        ttk.Label(lbl_targets_frame, text="(uno por línea o separados con coma)",
+                  font=("Arial", 7), foreground="gray").pack(side=tk.RIGHT, padx=4)
+
+        targets_container = ttk.Frame(cfg_frame)
+        targets_container.grid(row=14, column=0, columnspan=3, sticky="ew", padx=5, pady=(0, 2))
+        targets_container.columnconfigure(0, weight=1)
+        self.txt_monitor_targets = tk.Text(targets_container, height=3, state="disabled",
+                                           wrap="word", relief="solid", borderwidth=1,
+                                           font=("Consolas", 9))
+        self.txt_monitor_targets.grid(row=0, column=0, sticky="ew")
+        _targets_sb = ttk.Scrollbar(targets_container, orient="vertical",
+                                    command=self.txt_monitor_targets.yview)
+        self.txt_monitor_targets.configure(yscrollcommand=_targets_sb.set)
+        _targets_sb.grid(row=0, column=1, sticky="ns")
+
+        # Celular Respaldo (row 15)
+        ttk.Label(cfg_frame, text="🆘 Respaldo Emergencia:").grid(row=15, column=0, **grid_opts)
+        self.ent_monitor_backup = ttk.Entry(cfg_frame, state="disabled")
+        self.ent_monitor_backup.grid(row=15, column=1, **grid_E)
+        ttk.Label(cfg_frame, text="(+573001234567)", font=("Arial", 7),
+                  foreground="gray").grid(row=15, column=2, padx=2, sticky=tk.W)
+
+        # Auto-Respuesta (rows 16-17)
         self.var_autoreply_enabled = tk.BooleanVar(value=False)
         self.chk_autoreply = ttk.Checkbutton(
-            right_col,
+            cfg_frame,
             text="Auto-Respuesta",
             variable=self.var_autoreply_enabled,
             command=self.on_autoreply_toggle,
             state="disabled"
         )
-        self.chk_autoreply.grid(row=3, column=0, **grid_opts)
-        
-        self.ent_autoreply_text = ttk.Entry(right_col, width=30, state="disabled")
-        self.ent_autoreply_text.grid(row=3, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
-        
-        # Frame para configuración de Rotación (inicialmente oculto)
-        self.frame_rotation_config = ttk.Frame(right_col)
-        
-        ttk.Label(self.frame_rotation_config, text="Perfiles Simultáneos:").grid(row=0, column=0, padx=5, pady=2, sticky=tk.W)
-        self.ent_simultaneous = ttk.Entry(self.frame_rotation_config, width=10)
-        self.ent_simultaneous.insert(0, "5")
-        self.ent_simultaneous.grid(row=0, column=1, padx=5, pady=2)
-        
-        ttk.Label(self.frame_rotation_config, text="Mensajes por Perfil:").grid(row=1, column=0, padx=5, pady=2, sticky=tk.W)
-        self.ent_msgs_per_profile = ttk.Entry(self.frame_rotation_config, width=10)
-        self.ent_msgs_per_profile.insert(0, "10")
-        self.ent_msgs_per_profile.grid(row=1, column=1, padx=5, pady=2)
-        
-        ttk.Label(self.frame_rotation_config, text="Cooldown (minutos):").grid(row=2, column=0, padx=5, pady=2, sticky=tk.W)
-        self.ent_profile_cooldown = ttk.Entry(self.frame_rotation_config, width=10)
-        self.ent_profile_cooldown.insert(0, "60")  # Default 1 hora
-        self.ent_profile_cooldown.grid(row=2, column=1, padx=5, pady=2)
-        ttk.Label(self.frame_rotation_config, text="(tiempo antes de reutilizar perfil)", font=("Arial", 8)).grid(row=2, column=2, padx=2, pady=2, sticky=tk.W)
+        self.chk_autoreply.grid(row=16, column=0, columnspan=3, **grid_opts)
+        self.ent_autoreply_text = ttk.Entry(cfg_frame, state="disabled")
+        self.ent_autoreply_text.grid(row=17, column=0, columnspan=3, **grid_E)
 
-        # ── Solo RCS (solo aplica a canal SMS) ──────────────────────────────
+        # Config Rotación (row 18, oculto - mostrado por on_mode_change)
+        self.frame_rotation_config = ttk.Frame(cfg_frame)
+        self.frame_rotation_config.columnconfigure(1, weight=1)
+
+        ttk.Label(self.frame_rotation_config, text="Perfiles Simultáneos:").grid(row=0, column=0, padx=5, pady=2, sticky=tk.W)
+        self.ent_simultaneous = ttk.Entry(self.frame_rotation_config, width=8)
+        self.ent_simultaneous.insert(0, "5")
+        self.ent_simultaneous.grid(row=0, column=1, padx=5, pady=2, sticky=tk.EW)
+
+        ttk.Label(self.frame_rotation_config, text="Mensajes por Perfil:").grid(row=1, column=0, padx=5, pady=2, sticky=tk.W)
+        self.ent_msgs_per_profile = ttk.Entry(self.frame_rotation_config, width=8)
+        self.ent_msgs_per_profile.insert(0, "10")
+        self.ent_msgs_per_profile.grid(row=1, column=1, padx=5, pady=2, sticky=tk.EW)
+
+        ttk.Label(self.frame_rotation_config, text="Cooldown (min):").grid(row=2, column=0, padx=5, pady=2, sticky=tk.W)
+        self.ent_profile_cooldown = ttk.Entry(self.frame_rotation_config, width=8)
+        self.ent_profile_cooldown.insert(0, "60")
+        self.ent_profile_cooldown.grid(row=2, column=1, padx=5, pady=2, sticky=tk.EW)
+        ttk.Label(self.frame_rotation_config, text="(antes de reutilizar perfil)",
+                  font=("Arial", 7), foreground="gray").grid(row=3, column=0, columnspan=2, padx=5, sticky=tk.W)
+
+        # Solo RCS (row 18, oculto - mostrado por on_channel_change en modo SMS)
         self.var_only_rcs = tk.BooleanVar(value=False)
         self.chk_only_rcs = ttk.Checkbutton(
-            right_col,
+            cfg_frame,
             text="📡 Solo RCS (omitir SMS convencional)",
             variable=self.var_only_rcs
         )
@@ -388,10 +407,33 @@ class SendView(ttk.Frame):
 
         # -- Panel Tareas Activas (Derecha) --
         tasks_frame = ttk.LabelFrame(main_frame, text="Tareas Activas")
-        tasks_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        self.task_container = ttk.Frame(tasks_frame)
-        self.task_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        tasks_frame.pack(side=tk.RIGHT, fill=tk.Y, expand=False, padx=(0, 0))
+        tasks_frame.configure(width=270)
+        tasks_frame.pack_propagate(False)
+
+        # Canvas scrollable para múltiples tareas
+        _tasks_canvas = tk.Canvas(tasks_frame, highlightthickness=0, bd=0, width=260)
+        _tasks_scrollbar = ttk.Scrollbar(tasks_frame, orient="vertical", command=_tasks_canvas.yview)
+        _tasks_canvas.configure(yscrollcommand=_tasks_scrollbar.set)
+
+        _tasks_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        _tasks_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.task_container = ttk.Frame(_tasks_canvas)
+        _tasks_win_id = _tasks_canvas.create_window((0, 0), window=self.task_container, anchor="nw")
+
+        def _tasks_on_frame_configure(event):
+            _tasks_canvas.configure(scrollregion=_tasks_canvas.bbox("all"))
+        self.task_container.bind("<Configure>", _tasks_on_frame_configure)
+
+        def _tasks_on_canvas_configure(event):
+            _tasks_canvas.itemconfig(_tasks_win_id, width=event.width)
+        _tasks_canvas.bind("<Configure>", _tasks_on_canvas_configure)
+
+        def _tasks_scroll(event):
+            _tasks_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        _tasks_canvas.bind("<Enter>", lambda e: _tasks_canvas.bind_all("<MouseWheel>", _tasks_scroll))
+        _tasks_canvas.bind("<Leave>", lambda e: _tasks_canvas.unbind_all("<MouseWheel>"))
 
     def load_data(self):
         self.refresh_profiles()
@@ -420,7 +462,7 @@ class SendView(ttk.Frame):
             self.frame_dist_container.pack(fill=tk.BOTH, expand=True)
             self.btn_refresh.pack(side=tk.RIGHT, padx=2)
             self.lbl_profile.config(text="Perfiles:")
-            self.frame_rotation_config.grid(row=3, column=0, columnspan=3, pady=10, sticky="ew")
+            self.frame_rotation_config.grid(row=18, column=0, columnspan=3, pady=(4, 2), sticky="ew")
     
     def toggle_all_profiles(self):
         val = self.var_select_all.get()
@@ -527,14 +569,31 @@ class SendView(ttk.Frame):
         """Enable/disable monitor inputs and auto-reply checkbox."""
         enabled = self.var_monitor_enabled.get()
         state = "normal" if enabled else "disabled"
-        self.ent_monitor_group.config(state=state)
+        self.txt_monitor_targets.config(state=state)
         self.ent_monitor_backup.config(state=state)
         self.chk_autoreply.config(state=state)
-        
+
         # Clear and disable auto-reply if monitor is disabled
         if not enabled:
             self.var_autoreply_enabled.set(False)
             self.on_autoreply_toggle()
+
+    def _add_monitor_target(self):
+        """Abre un diálogo para agregar un nuevo destino de notificación."""
+        from tkinter import simpledialog
+        target = simpledialog.askstring(
+            "Agregar Destino",
+            "Nombre del grupo o número (+57XXXXXXXXXX):",
+            parent=self
+        )
+        if target and target.strip():
+            self.txt_monitor_targets.config(state="normal")
+            current = self.txt_monitor_targets.get("1.0", tk.END).strip()
+            sep = "\n" if current else ""
+            self.txt_monitor_targets.insert(tk.END, sep + target.strip())
+            # Mantener el estado correcto (habilitado si monitor activo)
+            if not self.var_monitor_enabled.get():
+                self.txt_monitor_targets.config(state="disabled")
 
     def on_autoreply_toggle(self):
         """Enable/disable auto-reply text input."""
@@ -571,7 +630,7 @@ class SendView(ttk.Frame):
         else:
             self.chk_monitor.config(text="Activar Monitor (solo WhatsApp)")
             # Mostrar Solo RCS en modo SMS
-            self.chk_only_rcs.grid(row=5, column=0, columnspan=3, padx=5, pady=(8, 2), sticky=tk.W)
+            self.chk_only_rcs.grid(row=19, column=0, columnspan=3, padx=4, pady=(4, 2), sticky=tk.W)
             
     def load_excel_file(self):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
@@ -709,31 +768,39 @@ class SendView(ttk.Frame):
         }
         
         # Monitor Configuration
-        monitor_group = None
+        monitor_targets = []
         monitor_backup = None
         auto_reply_text = None
-        
+
         if self.var_monitor_enabled.get():
-            monitor_group = self.ent_monitor_group.get().strip()
-            monitor_backup = self.ent_monitor_backup.get().strip()
-            
-            if not monitor_group:
-                messagebox.showwarning("Advertencia", "Monitor activado pero sin nombre de grupo para notificaciones.")
+            # Leer y parsear el widget multilínea
+            raw_targets = self.txt_monitor_targets.get("1.0", tk.END)
+            monitor_targets = [
+                t.strip()
+                for line in raw_targets.replace(',', '\n').splitlines()
+                for t in [line.strip()]
+                if t
+            ]
+            monitor_backup = self.ent_monitor_backup.get().strip() or None
+
+            if not monitor_targets:
+                messagebox.showwarning(
+                    "Advertencia",
+                    "Monitor activado pero sin destinos de notificación.\n"
+                    "Agrega al menos un grupo o número."
+                )
                 return
-            
-            if not monitor_backup:
-                messagebox.showwarning("Advertencia", "Monitor activado pero sin número celular de respaldo.")
-                return
-            
+
             if self.var_autoreply_enabled.get():
                 auto_reply_text = self.ent_autoreply_text.get().strip()
                 if not auto_reply_text:
                     messagebox.showwarning("Advertencia", "Auto-respuesta activada pero sin mensaje configurado.")
                     return
-        
-        config["monitor_group"] = monitor_group
+
+        config["monitor_targets"] = monitor_targets
         config["monitor_backup"] = monitor_backup
         config["auto_reply_text"] = auto_reply_text
+
         
         if not config["message_type"]:
              messagebox.showerror(MSG_ERROR, "Seleccione Tipo de Mensaje")
@@ -885,13 +952,15 @@ class SendView(ttk.Frame):
         else:  # Rotacion
             task_title = f"Rotación ({len(locked_profiles)} perfiles, {self.ent_simultaneous.get()} simultáneos)"
         task_frame = ttk.LabelFrame(self.task_container, text=task_title)
-        task_frame.pack(fill=tk.X, pady=5, anchor=tk.N)  # anchor=tk.N para apilar hacia arriba
-        
-        lbl_status = ttk.Label(task_frame, text="Iniciando...", width=40)
-        lbl_status.pack(side=tk.LEFT, padx=5)
-        
+        task_frame.pack(fill=tk.X, pady=2, padx=2, anchor=tk.N)
+
+        # Fila 1: estado
+        lbl_status = ttk.Label(task_frame, text="Iniciando...", anchor="w")
+        lbl_status.pack(fill=tk.X, padx=4, pady=(2, 0))
+
+        # Fila 2: barra de progreso
         progress = ttk.Progressbar(task_frame, length=100, mode='determinate')
-        progress.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        progress.pack(fill=tk.X, padx=4, pady=(2, 0))
         
         # Flag para saber si el widget fue destruido
         task_active = {'active': True}
@@ -1075,8 +1144,10 @@ class SendView(ttk.Frame):
                     completion_callback=on_complete
                 )
         
-        btn_cancel = ttk.Button(task_frame, text="Cancelar", command=lambda: self.cancel_task(runner, locked_profiles, task_active))
-        btn_cancel.pack(side=tk.RIGHT, padx=5)
+        # Fila 3: botón cancelar
+        btn_cancel = ttk.Button(task_frame, text="Cancelar",
+                                command=lambda: self.cancel_task(runner, locked_profiles, task_active))
+        btn_cancel.pack(fill=tk.X, padx=4, pady=(2, 4))
         
         runner.start()
         self.refresh_profiles()

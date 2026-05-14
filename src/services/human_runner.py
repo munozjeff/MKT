@@ -117,16 +117,23 @@ class HumanRunner:
             sim.calentar_sesion()
 
             # ── 5. Inicializar monitor (si esta configurado) ──────────────────
-            monitor_group  = self.config.get("monitor_group", "")
-            monitor_backup = self.config.get("monitor_backup", "")
-            if monitor_group or monitor_backup:
+            monitor_targets = self.config.get("monitor_targets") or []
+            monitor_backup  = self.config.get("monitor_backup", "")
+            if not monitor_targets:
+                legacy = self.config.get("monitor_group", "")
+                if legacy:
+                    monitor_targets = [legacy]
+            if monitor_targets or monitor_backup:
+                self.rr_state = {"idx": 0, "lock": threading.Lock()}
                 self.monitor_service = WhatsAppMonitorService(
                     driver=self.whatsapp_service.driver,
-                    notification_group=monitor_group or None,
+                    notification_targets=monitor_targets,
                     notification_backup=monitor_backup or None,
                     profile_name=self.profile.name
                 )
-                print(f"[HumanRunner] Monitor activo — Grupo: '{monitor_group}' | Respaldo: '{monitor_backup}'")
+                print(f"[HumanRunner] Monitor activo — 🎯 Destinos: {monitor_targets} | 🆘 Respaldo: '{monitor_backup}'")
+            else:
+                self.rr_state = None
 
             # ── 6. Bucle de envio ─────────────────────────────────────────────
             total = len(self.phone_numbers)
@@ -165,7 +172,8 @@ class HumanRunner:
                         monitor_time = self.monitor_service.monitorear_y_notificar(
                             self.whatsapp_service,
                             max_time=20,
-                            auto_reply_text=auto_reply_text
+                            auto_reply_text=auto_reply_text,
+                            rr_state=self.rr_state
                         )
                     except Exception as e:
                         print(f"[HumanRunner] Error en monitor: {e}")

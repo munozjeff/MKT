@@ -77,7 +77,10 @@ class RotationAutomationRunner:
         self.stop_event = threading.Event()
         self.pool_lock = threading.RLock()  # RLock permite reentrada (fix deadlock)
         self.count_lock = threading.Lock()  # Protege contadores
-        
+
+        # Round-robin compartido entre todos los workers (distribución de notificaciones)
+        self.rr_state = {"idx": 0, "lock": threading.Lock()}
+
         # Contadores globales
         self.total_messages = len(phone_numbers)
         self.processed_count = 0
@@ -311,16 +314,20 @@ class RotationAutomationRunner:
                 sim.calentar_sesion()
 
             # Inicializar monitor si está configurado
-            monitor_group = self.config.get("monitor_group", "")
-            monitor_backup = self.config.get("monitor_backup", "")
-            if monitor_group or monitor_backup:
+            monitor_targets = self.config.get("monitor_targets") or []
+            monitor_backup  = self.config.get("monitor_backup", "")
+            if not monitor_targets:
+                legacy = self.config.get("monitor_group", "")
+                if legacy:
+                    monitor_targets = [legacy]
+            if monitor_targets or monitor_backup:
                 monitor_service = WhatsAppMonitorService(
                     driver=service.driver,
-                    notification_group=monitor_group or None,
+                    notification_targets=monitor_targets,
                     notification_backup=monitor_backup or None,
                     profile_name=profile.name
                 )
-                print(f"[{profile.name}] 📱 Monitor activado — 🥇 Grupo: '{monitor_group or '—'}' | 🥈 Respaldo: '{monitor_backup or '—'}'")
+                print(f"[{profile.name}] 📱 Monitor activado — 🎯 Destinos: {monitor_targets} | 🆘 Respaldo: '{monitor_backup or '—'}'")
             
             # 3. Procesar mensajes hasta límite o cola vacía
             messages_sent = 0
@@ -362,7 +369,8 @@ class RotationAutomationRunner:
                         monitor_time = monitor_service.monitorear_y_notificar(
                             service,
                             max_time=max_monitor_time,
-                            auto_reply_text=auto_reply_text
+                            auto_reply_text=auto_reply_text,
+                            rr_state=self.rr_state
                         )
                         if monitor_time > 0:
                             print(f"[{profile.name}] Tiempo de monitoreo: {monitor_time:.1f}s")

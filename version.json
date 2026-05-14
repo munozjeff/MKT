@@ -1,8 +1,8 @@
 {
-    "version": "1.5.4",
-    "build": "20260513",
-    "release_date": "2026-05-13",
-    "release_notes": "- NUEVO: Modo Simulador Humano disponible en todos los modos (Individual, Distribuido, Rotacion)\\n- Fingerprinting anti-deteccion (plugins, languages, platform, chrome, hardwareConcurrency, deviceMemory)\\n- Escritura caracter a caracter con delays aleatorios y errores tipograficos corregidos\\n- Fix: texto del mensaje ya no se pierde despues de saltos de linea (StaleElementReference corregido)\\n- Rate Limiter por ventana deslizante: max N mensajes cada M minutos con distribucion aleatoria\\n- Warm-up de sesion: scroll y mouse aleatorio antes de empezar\\n- Scroll idle entre envios para simular actividad humana\\n- Pausas largas periodicas configurables (simulacion de descanso)\\n- Horario activo configurable (pausa automatica fuera de rango)\\n- UI: oculta Duracion/Pausa cuando Simulador Humano esta activo (son reemplazados por el rate limiter)\\n- UI: scrollbar autohide en panel de configuracion (aparece solo cuando el contenido no cabe)\\n- UI: contador de navegadores disponibles al seleccionar etiqueta en modos Distribuido/Rotacion",
+    "version": "1.6.0",
+    "build": "20260514",
+    "release_date": "2026-05-14",
+    "release_notes": "- NUEVO: Monitor multi-destino con distribucion round-robin thread-safe\\n- Multiples grupos o numeros de notificacion (lista separada por linea o coma)\\n- Interfaz: campo de destinos multilinea con boton [+] para agregar rapidamente\\n- Round-robin global compartido entre todos los workers/perfiles concurrentes\\n- Respaldo de emergencia solo se activa si TODOS los destinos primarios fallan\\n- Retrocompatibilidad: configuraciones antiguas con monitor_group unico siguen funcionando\\n- Logs mejorados: muestra lista de destinos activos y estado de cada intento",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

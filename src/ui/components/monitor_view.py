@@ -77,19 +77,39 @@ class MonitorView(ttk.Frame):
         # 3. Configuración de notificaciones (REDUCIDO)
         frame_notif = ttk.LabelFrame(config_frame, text="Notificaciones", padding=5)
         frame_notif.pack(fill=tk.X, pady=3)
-        
-        # Campo 1: Grupo (Prioridad)
-        ttk.Label(frame_notif, text="🥇 Grupo para Notificaciones (prioridad):", font=("Arial", 9, "bold")).pack(anchor=tk.W)
-        self.ent_notification_group = ttk.Entry(frame_notif, width=35)
-        self.ent_notification_group.pack(fill=tk.X, pady=2)
-        ttk.Label(frame_notif, text="  Nombre exacto del grupo de WhatsApp donde se enviarán las alertas",
+
+        # Header con label + botón [+]
+        notif_header = ttk.Frame(frame_notif)
+        notif_header.pack(fill=tk.X)
+        ttk.Label(notif_header, text="🎯 Destinos de Notificación:",
+                  font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        ttk.Button(notif_header, text=" + ", width=3,
+                   command=self._add_monitor_target).pack(side=tk.RIGHT, padx=(4, 0))
+        ttk.Label(notif_header, text="(uno por línea o separados con coma)",
+                  font=("Arial", 7), foreground="gray").pack(side=tk.RIGHT, padx=4)
+
+        # Widget multilínea + scrollbar
+        targets_row = ttk.Frame(frame_notif)
+        targets_row.pack(fill=tk.X, pady=(2, 0))
+        targets_row.columnconfigure(0, weight=1)
+        self.txt_notification_targets = tk.Text(targets_row, height=3, wrap="word",
+                                                relief="solid", borderwidth=1,
+                                                font=("Consolas", 9))
+        self.txt_notification_targets.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        _sb = ttk.Scrollbar(targets_row, orient="vertical",
+                            command=self.txt_notification_targets.yview)
+        self.txt_notification_targets.configure(yscrollcommand=_sb.set)
+        _sb.pack(side=tk.RIGHT, fill=tk.Y)
+        ttk.Label(frame_notif,
+                  text="  Nombre exacto del grupo o número (+57XXXXXXXXXX) para cada destino",
                   font=("Arial", 7), foreground="gray").pack(anchor=tk.W)
-        
-        # Campo 2: Celular Respaldo
-        ttk.Label(frame_notif, text="🥈 Contacto para notificación (respaldo):", font=("Arial", 9, "bold")).pack(anchor=tk.W, pady=(5, 0))
+
+        # Campo 2: Celular Respaldo Emergencia
+        ttk.Label(frame_notif, text="🆘 Respaldo de Emergencia:",
+                  font=("Arial", 9, "bold")).pack(anchor=tk.W, pady=(5, 0))
         self.ent_notification_backup = ttk.Entry(frame_notif, width=35)
         self.ent_notification_backup.pack(fill=tk.X, pady=2)
-        ttk.Label(frame_notif, text="  Ej: +573001234567  (se usa si el grupo falla o no se encuentra)",
+        ttk.Label(frame_notif, text="  Ej: +573001234567  (se usa si TODOS los destinos primarios fallan)",
                   font=("Arial", 7), foreground="gray").pack(anchor=tk.W)
         
         # 4. Configuración de auto-respuesta (REDUCIDO)
@@ -138,7 +158,20 @@ class MonitorView(ttk.Frame):
             self.ent_autoreply_text.config(state="normal")
         else:
             self.ent_autoreply_text.config(state="disabled")
-    
+
+    def _add_monitor_target(self):
+        """Abre un diálogo para agregar un nuevo destino de notificación."""
+        from tkinter import simpledialog
+        target = simpledialog.askstring(
+            "Agregar Destino",
+            "Nombre del grupo o número (+57XXXXXXXXXX):",
+            parent=self
+        )
+        if target and target.strip():
+            current = self.txt_notification_targets.get("1.0", tk.END).strip()
+            sep = "\n" if current else ""
+            self.txt_notification_targets.insert(tk.END, sep + target.strip())
+
     def refresh_profiles(self):
         """Cargar lista de perfiles con WhatsApp disponible (sin etiqueta BLOQUEADO)."""
         all_profiles = self.browser_service.get_available_profiles()
@@ -227,16 +260,20 @@ class MonitorView(ttk.Frame):
             messagebox.showerror("Error", "Seleccione al menos un perfil para monitorear")
             return
         
-        # 2. Validar campos de notificación (ambos son obligatorios)
-        notification_group = self.ent_notification_group.get().strip()
-        notification_backup = self.ent_notification_backup.get().strip()
-        
-        if not notification_group:
-            messagebox.showerror("Error", "Ingrese el nombre del grupo de WhatsApp para notificaciones (prioridad)")
-            return
-        
-        if not notification_backup:
-            messagebox.showerror("Error", "Ingrese el número celular de respaldo para notificaciones")
+        # 2. Validar campos de notificación
+        raw_targets = self.txt_notification_targets.get("1.0", tk.END)
+        notification_targets = [
+            t.strip()
+            for line in raw_targets.replace(',', '\n').splitlines()
+            for t in [line.strip()]
+            if t
+        ]
+        notification_backup = self.ent_notification_backup.get().strip() or None
+
+        if not notification_targets:
+            messagebox.showerror("Error",
+                                 "Ingrese al menos un destino de notificación.\n"
+                                 "Puede ser un nombre de grupo o número (+57XXXXXXXXXX).")
             return
         
         # 3. Obtener configuración
@@ -291,7 +328,7 @@ class MonitorView(ttk.Frame):
             "simultaneous": simultaneous,
             "interval": interval,
             "auto_reply_text": auto_reply_text,
-            "monitor_group": notification_group,
+            "monitor_targets": notification_targets,
             "monitor_backup": notification_backup
         }
         

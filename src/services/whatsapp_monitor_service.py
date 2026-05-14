@@ -14,31 +14,49 @@ from datetime import datetime
 class WhatsAppMonitorService:
     """Servicio para monitorear mensajes nuevos en WhatsApp y enviar notificaciones."""
     
-    def __init__(self, driver, notification_group=None, notification_backup=None,
-                 notification_contact=None, profile_name="Desconocido"):
+    def __init__(self, driver,
+                 notification_targets=None,
+                 notification_group=None,
+                 notification_backup=None,
+                 notification_contact=None,
+                 profile_name="Desconocido"):
         """
         Inicializa el servicio de monitoreo.
         
         Args:
             driver: Instancia de Selenium WebDriver ya inicializada
-            notification_group: Nombre del grupo de WhatsApp (PRIORIDAD principal)
-            notification_backup: Número celular de respaldo (si el grupo falla)
-            notification_contact: DEPRECATED - equivale a notification_group para compatibilidad
-            profile_name: Nombre del perfil de navegador que se está usando
+            notification_targets: Lista de destinos primarios (grupos o números) para
+                                  distribución round-robin. Prioridad máxima.
+            notification_group: LEGACY — un único grupo (si targets no se pasa).
+            notification_backup: Número/grupo de emergencia (si TODOS los targets fallan).
+            notification_contact: DEPRECATED — equivale a notification_group.
+            profile_name: Nombre del perfil de navegador que se está usando.
         """
         self.driver = driver
-        # Prioridad: notification_group. Si no se pasa, usar notification_contact (backward compat)
-        self.notification_group = notification_group or notification_contact
-        self.notification_backup = notification_backup
-        # Alias para compatibilidad con código antiguo
-        self.notification_contact = self.notification_group
         self.profile_name = profile_name
         self.wait = WebDriverWait(self.driver, 10)
-        # Cambio: Usar diccionario para guardar estados y detectar cambios 'reales'
-        self.chat_states = {}  # Format: {name: "preview|time|count"}
-        # Nuevo: Set para rastrear a quiénes ya se les envió auto-respuesta en esta sesión
+        self.chat_states = {}  # {name: "preview|time|count"}
         self.replied_chats = set()
 
+        # ── Construir lista de targets primarios ──────────────────────────────
+        if notification_targets:
+            # Normalizar: puede venir como lista o como string separado por coma
+            if isinstance(notification_targets, str):
+                self.notification_targets = [t.strip() for t in notification_targets.replace('\n', ',').split(',') if t.strip()]
+            else:
+                self.notification_targets = [t.strip() for t in notification_targets if t and t.strip()]
+        elif notification_group or notification_contact:
+            # Retrocompatibilidad: envolver el único grupo en lista
+            single = notification_group or notification_contact
+            self.notification_targets = [single]
+        else:
+            self.notification_targets = []
+
+        self.notification_backup = notification_backup
+
+        # Aliases de compatibilidad con código antiguo
+        self.notification_group  = self.notification_targets[0] if self.notification_targets else None
+        self.notification_contact = self.notification_group
 
         
     def obtener_chats_no_leidos(self):
@@ -422,97 +440,112 @@ class WhatsAppMonitorService:
                 pass
             return False
 
-    def enviar_notificacion(self, chat_info, whatsapp_service, mensajes_completos=None):
+    def enviar_notificacion(self, chat_info, whatsapp_service,
+                             mensajes_completos=None, rr_state=None):
         """
-        Envía una notificación usando PRIORIDAD DE GRUPO con RESPALDO a número celular.
-        
+        Envía una notificación con distribución round-robin entre múltiples destinos.
+
         Orden de intento:
-          1. notification_group (nombre del grupo) — prioridad
-          2. notification_backup (número celular)  — solo si el grupo falla
-        
+          1. Destino seleccionado por round-robin de notification_targets.
+          2. Si falla, siguiente destino en la lista (en este mismo envío).
+          3. Si TODOS fallan → notification_backup (emergencia).
+
         Args:
-            chat_info: Diccionario con información del chat
-            whatsapp_service: Instancia de WhatsAppService para enviar el mensaje
-            mensajes_completos: Lista de mensajes leídos (opcional)
-            
+            chat_info: Diccionario con información del chat.
+            whatsapp_service: Instancia de WhatsAppService.
+            mensajes_completos: Lista de textos leídos (opcional).
+            rr_state: dict mutable compartido entre threads:
+                      {"idx": int, "lock": threading.Lock()}
+                      Si es None se crea uno local (sin distribución entre perfiles).
+
         Returns:
-            True si alguno de los dos intentos tuvo éxito, False si ambos fallaron
+            True si al menos un destino aceptó la notificación.
         """
-        if not self.notification_group and not self.notification_backup:
-            print("[Monitor] ⚠️ No hay destino de notificación configurado (ni grupo ni respaldo)")
+        import threading
+
+        if not self.notification_targets and not self.notification_backup:
+            print("[Monitor] ⚠️ No hay destino de notificación configurado")
             return False
 
-        # Construir el mensaje de notificación
-        contenido_mensajes = ""
-        if mensajes_completos:
-            contenido_mensajes = "\n".join(mensajes_completos)
-        else:
-            contenido_mensajes = f"Preview: {chat_info['preview']}"
-
-        mensaje = f"""Perfil: {self.profile_name}
-Nombre: {chat_info['nombre']}
-Hora: {chat_info['hora']}
-Detectado: {chat_info['timestamp']}
-
---- MENSAJES ---
-{contenido_mensajes}"""
-
+        # ── Construir mensaje ─────────────────────────────────────────────────
+        contenido = "\n".join(mensajes_completos) if mensajes_completos \
+                    else f"Preview: {chat_info['preview']}"
+        mensaje = (
+            f"Perfil: {self.profile_name}\n"
+            f"Nombre: {chat_info['nombre']}\n"
+            f"Hora: {chat_info['hora']}\n"
+            f"Detectado: {chat_info['timestamp']}\n"
+            f"\n--- MENSAJES ---\n{contenido}"
+        )
         mensaje_limpio = self.limpiar_mensaje(mensaje)
+        print(f"\n[Monitor] 📤 Notificación sobre: {chat_info['nombre']}")
 
-        print(f"\n[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
+        targets = self.notification_targets
+        n = len(targets)
 
-        # ── INTENTO 1: Grupo (prioridad) ──────────────────────────────────────
-        if self.notification_group:
-            print(f"[Monitor] 🥇 Intento 1/2 → GRUPO: '{self.notification_group}'")
-            exito = self._enviar_a_contacto(self.notification_group, mensaje_limpio, whatsapp_service)
-            if exito:
-                print(f"[Monitor] ✅ Notificación enviada al grupo '{self.notification_group}'")
-                return True
-            else:
-                print(f"[Monitor] ⚠️ Falló envío al grupo '{self.notification_group}'")
-                if self.notification_backup:
-                    print(f"[Monitor] 🔄 Activando respaldo → número celular: '{self.notification_backup}'")
-                else:
-                    print("[Monitor] ❌ No hay número de respaldo configurado. Notificación perdida.")
-                    return False
+        if n == 0:
+            # Sin targets primarios → ir directo al backup
+            pass
+        else:
+            # Estado round-robin local si no se proporcionó uno externo
+            if rr_state is None:
+                rr_state = {"idx": 0, "lock": threading.Lock()}
 
-        # ── INTENTO 2: Número celular (respaldo) ──────────────────────────────
+            # Tomar índice actual y avanzar (thread-safe)
+            with rr_state["lock"]:
+                start_idx = rr_state["idx"] % n
+                rr_state["idx"] = (start_idx + 1) % n
+
+            # Intentar desde start_idx recorriendo todos los targets
+            for offset in range(n):
+                idx = (start_idx + offset) % n
+                destino = targets[idx]
+                total_targets = n
+                print(f"[Monitor] 🎯 Intento {offset+1}/{total_targets} → '{destino}'")
+                if self._enviar_a_contacto(destino, mensaje_limpio, whatsapp_service):
+                    print(f"[Monitor] ✅ Notificación enviada a '{destino}'")
+                    return True
+                print(f"[Monitor] ⚠️ Falló '{destino}', probando siguiente...")
+
+            print("[Monitor] ⚠️ Todos los destinos primarios fallaron.")
+
+        # ── RESPALDO DE EMERGENCIA ────────────────────────────────────────────
         if self.notification_backup:
-            print(f"[Monitor] 🥈 Intento 2/2 → RESPALDO: '{self.notification_backup}'")
-            exito = self._enviar_a_contacto(self.notification_backup, mensaje_limpio, whatsapp_service)
-            if exito:
-                print(f"[Monitor] ✅ Notificación enviada al número de respaldo '{self.notification_backup}'")
+            print(f"[Monitor] 🆘 Usando respaldo de emergencia: '{self.notification_backup}'")
+            if self._enviar_a_contacto(self.notification_backup, mensaje_limpio, whatsapp_service):
+                print(f"[Monitor] ✅ Notificación enviada al respaldo '{self.notification_backup}'")
                 return True
-            else:
-                print(f"[Monitor] ❌ Falló también el número de respaldo '{self.notification_backup}'")
+            print(f"[Monitor] ❌ Falló también el respaldo '{self.notification_backup}'")
 
-        print("[Monitor] ❌ Todos los intentos de notificación fallaron.")
+        print("[Monitor] ❌ Todos los intentos fallaron. Notificación perdida.")
         return False
     
-    def monitorear_y_notificar(self, whatsapp_service, max_time=5, auto_reply_text=None):
+    def monitorear_y_notificar(self, whatsapp_service, max_time=5,
+                                auto_reply_text=None, rr_state=None):
         """
         Monitorea mensajes nuevos y envía notificaciones si los hay.
-        Esta función está diseñada para ser llamada antes de cada envío.
-        
+
         Args:
             whatsapp_service: Instancia de WhatsAppService
             max_time: Tiempo máximo en segundos para el monitoreo (default: 5)
-            auto_reply_text: Texto para respuesta automática (opcional). Si se define, se envía al chat.
-            
+            auto_reply_text: Texto para respuesta automática (opcional).
+            rr_state: dict compartido entre threads para round-robin
+                      {"idx": int, "lock": threading.Lock()}. None = local.
+
         Returns:
             Tiempo usado en el monitoreo (en segundos)
         """
-        if not self.notification_group and not self.notification_backup:
-            print("[Monitor] Monitor deshabilitado (sin grupo ni número de notificación)")
-            return 0  # Monitor deshabilitado
-        
+        if not self.notification_targets and not self.notification_backup:
+            print("[Monitor] Monitor deshabilitado (sin destinos de notificación)")
+            return 0
+
+        targets_str = ", ".join(self.notification_targets) if self.notification_targets else "❌ No configurado"
         print(f"\n[Monitor] ═══════════════════════════════════════")
         print(f"[Monitor] Iniciando monitoreo de mensajes nuevos")
-        print(f"[Monitor] 🥇 Grupo (prioridad): {self.notification_group or '❌ No configurado'}")
-        print(f"[Monitor] 🥈 Respaldo (celular): {self.notification_backup or '❌ No configurado'}")
+        print(f"[Monitor] 🎯 Destinos ({len(self.notification_targets)}): {targets_str}")
+        print(f"[Monitor] 🆘 Respaldo emergencia: {self.notification_backup or '❌ No configurado'}")
         if auto_reply_text:
-            print(f"[Monitor] 🤖 MODO AUTO-RESPUESTA ACTIVO")
-            print(f"[Monitor] Mensaje: '{auto_reply_text}'")
+            print(f"[Monitor] 🤖 MODO AUTO-RESPUESTA ACTIVO: '{auto_reply_text}'")
         print(f"[Monitor] Tiempo máximo: {max_time}s")
         print(f"[Monitor] ═══════════════════════════════════════")
         
@@ -640,7 +673,11 @@ Detectado: {chat_info['timestamp']}
                     
                     # EJECUTAR NOTIFICACIÓN si corresponde
                     if debe_notificar:
-                        resultado = self.enviar_notificacion(chat, whatsapp_service, mensajes_completos=mensajes)
+                        resultado = self.enviar_notificacion(
+                            chat, whatsapp_service,
+                            mensajes_completos=mensajes,
+                            rr_state=rr_state
+                        )
                         if resultado:
                             print(f"[Monitor] ✅ Notificación {idx} enviada exitosamente")
                         else:

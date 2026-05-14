@@ -101,17 +101,24 @@ class AutomationRunner:
                 return
                 
             # Inicializar el monitor de mensajes si está configurado
-            monitor_group = self.config.get("monitor_group", "")
-            monitor_backup = self.config.get("monitor_backup", "")
-            if monitor_group or monitor_backup:
+            monitor_targets = self.config.get("monitor_targets") or []
+            monitor_backup  = self.config.get("monitor_backup", "")
+            # Retrocompatibilidad: si no hay targets pero sí monitor_group, usarlo
+            if not monitor_targets:
+                legacy = self.config.get("monitor_group", "")
+                if legacy:
+                    monitor_targets = [legacy]
+            if monitor_targets or monitor_backup:
+                self.rr_state = {"idx": 0, "lock": threading.Lock()}
                 self.monitor_service = WhatsAppMonitorService(
                     driver=self.whatsapp_service.driver,
-                    notification_group=monitor_group or None,
+                    notification_targets=monitor_targets,
                     notification_backup=monitor_backup or None,
                     profile_name=self.profile.name
                 )
-                print(f"📱 Monitor activado — 🥇 Grupo: '{monitor_group or '—'}' | 🥈 Respaldo: '{monitor_backup or '—'}'")
+                print(f"📱 Monitor activado — 🎯 Destinos: {monitor_targets} | 🆘 Respaldo: '{monitor_backup or '—'}'")
             else:
+                self.rr_state = None
                 print("📱 Monitor de mensajes desactivado")
                 
             # 3. Bucle de envío
@@ -133,7 +140,8 @@ class AutomationRunner:
                         monitor_time = self.monitor_service.monitorear_y_notificar(
                             self.whatsapp_service, 
                             max_time=max_monitor_time,
-                            auto_reply_text=auto_reply_text
+                            auto_reply_text=auto_reply_text,
+                            rr_state=self.rr_state
                         )
                         if monitor_time > 0:
                             print(f"⏱ Tiempo de monitoreo: {monitor_time:.1f}s")
