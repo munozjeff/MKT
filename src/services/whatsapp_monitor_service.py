@@ -14,24 +14,49 @@ from datetime import datetime
 class WhatsAppMonitorService:
     """Servicio para monitorear mensajes nuevos en WhatsApp y enviar notificaciones."""
     
-    def __init__(self, driver, notification_contact=None, profile_name="Desconocido"):
+    def __init__(self, driver,
+                 notification_targets=None,
+                 notification_group=None,
+                 notification_backup=None,
+                 notification_contact=None,
+                 profile_name="Desconocido"):
         """
         Inicializa el servicio de monitoreo.
         
         Args:
             driver: Instancia de Selenium WebDriver ya inicializada
-            notification_contact: Número o nombre de contacto/grupo para enviar notificaciones
-            profile_name: Nombre del perfil de navegador que se está usando
+            notification_targets: Lista de destinos primarios (grupos o números) para
+                                  distribución round-robin. Prioridad máxima.
+            notification_group: LEGACY — un único grupo (si targets no se pasa).
+            notification_backup: Número/grupo de emergencia (si TODOS los targets fallan).
+            notification_contact: DEPRECATED — equivale a notification_group.
+            profile_name: Nombre del perfil de navegador que se está usando.
         """
         self.driver = driver
-        self.notification_contact = notification_contact
         self.profile_name = profile_name
         self.wait = WebDriverWait(self.driver, 10)
-        # Cambio: Usar diccionario para guardar estados y detectar cambios 'reales'
-        self.chat_states = {}  # Format: {name: "preview|time|count"}
-        # Nuevo: Set para rastrear a quiénes ya se les envió auto-respuesta en esta sesión
+        self.chat_states = {}  # {name: "preview|time|count"}
         self.replied_chats = set()
 
+        # ── Construir lista de targets primarios ──────────────────────────────
+        if notification_targets:
+            # Normalizar: puede venir como lista o como string separado por coma
+            if isinstance(notification_targets, str):
+                self.notification_targets = [t.strip() for t in notification_targets.replace('\n', ',').split(',') if t.strip()]
+            else:
+                self.notification_targets = [t.strip() for t in notification_targets if t and t.strip()]
+        elif notification_group or notification_contact:
+            # Retrocompatibilidad: envolver el único grupo en lista
+            single = notification_group or notification_contact
+            self.notification_targets = [single]
+        else:
+            self.notification_targets = []
+
+        self.notification_backup = notification_backup
+
+        # Aliases de compatibilidad con código antiguo
+        self.notification_group  = self.notification_targets[0] if self.notification_targets else None
+        self.notification_contact = self.notification_group
 
         
     def obtener_chats_no_leidos(self):
@@ -78,14 +103,35 @@ class WhatsAppMonitorService:
                             hora = "No disponible"
                             
                             try:
-                                # Intentar extraer preview del texto visible
+                                import re as _re
                                 lines = chat.text.split('\n')
-                                if len(lines) >= 2:
-                                    # Normalmente: [0] Hora, [1] Nombre, [2] Mensaje... varia según layout
-                                    # Estrategia segura: última línea suele ser el mensaje, segunda línea suele ser hora
-                                    preview = lines[-1]
-                                    if len(lines) > 1:
-                                        hora = lines[1]
+                                hora_pattern = _re.compile(r'^\d{1,2}:\d{2}$')
+                                badge_pattern = _re.compile(r'mensaje.*no le[ií]do', _re.IGNORECASE)
+                                
+                                hora_encontrada = "No disponible"
+                                preview_candidatos = []
+                                
+                                for line in lines:
+                                    line_strip = line.strip()
+                                    if not line_strip:
+                                        continue
+                                    if hora_pattern.match(line_strip):
+                                        # Es una hora (ej. "6:09", "18:52")
+                                        hora_encontrada = line_strip
+                                    elif badge_pattern.search(line_strip):
+                                        # Es el texto del badge ("2 mensajes no leídos") → descartar
+                                        pass
+                                    elif line_strip == nombre:
+                                        # Es el nombre del contacto → descartar
+                                        pass
+                                    else:
+                                        # Puede ser el preview del mensaje
+                                        preview_candidatos.append(line_strip)
+                                
+                                hora = hora_encontrada
+                                # El último candidato restante es el preview más reciente
+                                preview = preview_candidatos[-1] if preview_candidatos else "No disponible"
+                                print(f"[Monitor] ⏱ Hora extraída: '{hora}' | Preview: '{preview[:40]}'")
                             except: pass
                             
                             chat_info = {
@@ -258,143 +304,248 @@ class WhatsAppMonitorService:
         
         return mensaje_limpio.strip()
     
-    def enviar_notificacion(self, chat_info, whatsapp_service, mensajes_completos=None):
+    def _enviar_a_contacto(self, contacto, mensaje_limpio, whatsapp_service):
         """
-        Envía una notificación al contacto predefinido usando whatsapp_service.
-        
-        Args:
-            chat_info: Diccionario con información del chat
-            whatsapp_service: Instancia de WhatsAppService para enviar el mensaje
-            mensajes_completos: Lista de mensajes leídos (opcional)
-        """
-        if not self.notification_contact:
-            print("[Monitor] No hay número de notificación configurado")
-            return False
-        
-        try:
-            # Usar el contacto tal como está (puede ser número o nombre de grupo)
-            contacto_notif = self.notification_contact
-            
-            # Formatear el mensaje de notificación
-            contenido_mensajes = ""
-            if mensajes_completos:
-                contenido_mensajes = "\n".join(mensajes_completos)
-            else:
-                contenido_mensajes = f"Preview: {chat_info['preview']}"
-            
-            mensaje = f"""Perfil: {self.profile_name}
-Nombre: {chat_info['nombre']}
-Hora: {chat_info['hora']}
-Detectado: {chat_info['timestamp']}
+        Intenta enviar un mensaje a un contacto o grupo específico.
 
---- MENSAJES ---
-{contenido_mensajes}"""
-            
-            # Limpiar caracteres especiales del mensaje
-            mensaje_limpio = self.limpiar_mensaje(mensaje)
-            
-            print(f"\\n[Monitor] 📤 Enviando notificación sobre: {chat_info['nombre']}")
-            print(f"[Monitor] Contacto destino: {contacto_notif}")
-            
-            # PASO 1: Click en "Nuevo chat"
-            print("[Monitor] Paso 1/5: Abriendo 'Nuevo chat'...")
-            # La función click_new_chat no retorna valor (void), así que no verificamos resultado
-            whatsapp_service.click_new_chat()
-            print("[Monitor] ✓ 'Nuevo chat' abierto (asumiendo éxito)")
-            
-            # PASO 2: Buscar el contacto
-            print(f"[Monitor] Paso 2/5: Buscando contacto {contacto_notif}...")
-            if not whatsapp_service.search_contact(contacto_notif):
-                print("[Monitor] ✗ Error al buscar contacto")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Contacto buscado")
-            
-            # PASO 3: Verificar que el contacto existe
-            # Si tiene letras, asumimos que es un GRUPO o contacto guardado -> saltar validación estricta
-            import re
-            is_group_or_name = bool(re.search('[a-zA-Z]', contacto_notif))
-            
-            if is_group_or_name:
-                print(f"[Monitor] Detectado nombre/grupo '{contacto_notif}', saltando validación numérica...")
-                # Pequeña espera para que aparezca en la lista
-                time.sleep(1)
-            else:
-                print("[Monitor] Paso 3/5: Verificando existencia del contacto (número)...")
-                found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
-                
-                if not found or not has_whatsapp:
-                    print(f"[Monitor] ✗ El contacto no fue encontrado o no tiene WhatsApp: {error_msg}")
-                    whatsapp_service.go_back()
+        Flujo:
+        ── VÍA RÁPIDA (sin Nuevo Chat): ─────────────────────────────────────
+          1. Busca el <input> de la barra lateral y escribe el nombre del grupo.
+          2. Presiona ENTER.
+          3. Espera hasta 5 s a que aparezca el campo de mensaje del chat.
+          4. Si aparece → chat abierto, salta al envío.
+          5. Si NO aparece → activa el flujo normal.
+
+        ── FLUJO NORMAL (con Nuevo Chat): ───────────────────────────────────
+          1. click_new_chat()
+          2. search_contact()
+          3. check_contact_exists() solo para números
+          4. open_chat()
+          → envío final
+
+        Returns:
+            True si el envío fue exitoso, False en caso contrario.
+        """
+        import re
+        try:
+            chat_abierto = False
+
+            # ── VÍA RÁPIDA ────────────────────────────────────────────────────
+            print(f"[Monitor] ⚡ Vía rápida (sin 'Nuevo Chat') → '{contacto}'")
+            try:
+                fast_wait = WebDriverWait(self.driver, 5)
+
+                # Detectar el campo de búsqueda de la barra lateral
+                search_input = fast_wait.until(
+                    EC.presence_of_element_located((
+                        By.XPATH,
+                        '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
+                        ' | //input[@data-tab="3" and contains(@class,"html-input")]'
+                    ))
+                )
+
+                # Limpiar y escribir el nombre del grupo
+                search_input.send_keys(Keys.CONTROL + "a")
+                search_input.send_keys(Keys.DELETE)
+                search_input.send_keys(contacto)
+                time.sleep(0.8)  # Dar tiempo a que aparezcan los resultados
+
+                # Presionar ENTER para abrir el primer resultado
+                search_input.send_keys(Keys.ENTER)
+
+                # Verificar si el chat se abrió usando la lógica de doble intento
+                # (versión nueva + versión antigua) compartida con send_text_message
+                try:
+                    print("REVISANDO SI SE ABRIÓ EL CHAT")
+                    input_verificacion = whatsapp_service._get_message_input_box()
+                    if input_verificacion:
+                        print("[Monitor] ✓ Vía rápida exitosa — chat abierto")
+                        chat_abierto = True
+                    else:
+                        print("[Monitor] ⚠ Chat no se abrió (input no encontrado) → activando flujo normal")
+                        chat_abierto = False
+                except Exception:
+                    print("[Monitor] ⚠ Chat no se abrió → activando flujo normal")
+                    chat_abierto = False
+
+            except Exception as e:
+                print(f"[Monitor] ⚠ Vía rápida no disponible ({e}) → flujo normal")
+                chat_abierto = False
+
+            # ── FLUJO NORMAL (solo si la vía rápida no abrió el chat) ─────────
+            if not chat_abierto:
+                print(f"[Monitor] Paso 1/4: Abriendo 'Nuevo chat' para → '{contacto}'...")
+                whatsapp_service.click_new_chat()
+                print("[Monitor] ✓ 'Nuevo chat' abierto")
+
+                print(f"[Monitor] Paso 2/4: Buscando contacto '{contacto}'...")
+                if not whatsapp_service.search_contact(contacto):
+                    print(f"[Monitor] ✗ Error al buscar '{contacto}'")
+                    try:
+                        whatsapp_service.go_back()
+                    except:
+                        pass
                     return False
-                print("[Monitor] ✓ Contacto verificado")
-            
-            # PASO 4: Abrir el chat
-            print("[Monitor] Paso 4/5: Abriendo chat...")
-            if not whatsapp_service.open_chat():
-                print("[Monitor] ✗ Error al abrir el chat")
-                whatsapp_service.go_back()
-                return False
-            print("[Monitor] ✓ Chat abierto")
-            
-            # PASO 5: Enviar el mensaje
-            print("[Monitor] Paso 5/5: Enviando mensaje...")
+                print("[Monitor] ✓ Contacto buscado")
+
+                # Verificación de existencia solo para números (no grupos/nombres)
+                is_group_or_name = bool(re.search('[a-zA-Z]', contacto))
+                if is_group_or_name:
+                    print("[Monitor] Detectado nombre/grupo → saltando validación numérica")
+                    time.sleep(1)
+                else:
+                    print("[Monitor] Paso 3/4: Verificando existencia del contacto (número)...")
+                    found, has_whatsapp, error_msg = whatsapp_service.check_contact_exists()
+                    if not found or not has_whatsapp:
+                        print(f"[Monitor] ✗ Contacto no encontrado o sin WhatsApp: {error_msg}")
+                        try:
+                            whatsapp_service.go_back()
+                        except:
+                            pass
+                        return False
+                    print("[Monitor] ✓ Contacto verificado")
+
+                print("[Monitor] Paso 4/4: Abriendo chat...")
+                if not whatsapp_service.open_chat():
+                    print("[Monitor] ✗ Error al abrir el chat")
+                    try:
+                        whatsapp_service.go_back()
+                    except:
+                        pass
+                    return False
+                print("[Monitor] ✓ Chat abierto")
+
+            # ── PASO FINAL: Enviar el mensaje (común a ambas vías) ────────────
+            print("[Monitor] Enviando mensaje...")
             if not whatsapp_service.send_text_message(mensaje_limpio):
-                print("[Monitor] ✗ Error al enviar mensaje de texto")
+                print("[Monitor] ✗ Error al escribir el mensaje")
                 return False
-            
-            # Enviar el mensaje (presionar Enter)
             if not whatsapp_service.send_message_simple():
-                print("[Monitor] ✗ Error al enviar mensaje")
+                print("[Monitor] ✗ Error al enviar el mensaje")
                 return False
-            
-            print("[Monitor] ✓ Notificación enviada correctamente")
-            
-            # Esperar confirmación de envío
+
+            print(f"[Monitor] ✓ Notificación enviada correctamente a '{contacto}'")
             time.sleep(2)
-            
-            # Cerrar el chat y volver a la lista
             whatsapp_service.close_chat()
-            
-            # Pausa adicional para asegurar que WhatsApp esté listo
             time.sleep(2)
-            
             return True
-            
+
         except Exception as e:
-            print(f"[Monitor] ❌ Error al enviar notificación: {e}")
+            print(f"[Monitor] ❌ Error enviando a '{contacto}': {e}")
             import traceback
             traceback.print_exc()
-            # Intentar volver a la lista principal
             try:
                 whatsapp_service.go_back()
             except:
                 pass
             return False
+
+    def enviar_notificacion(self, chat_info, whatsapp_service,
+                             mensajes_completos=None, rr_state=None):
+        """
+        Envía una notificación con distribución round-robin entre múltiples destinos.
+
+        Orden de intento:
+          1. Destino seleccionado por round-robin de notification_targets.
+          2. Si falla, siguiente destino en la lista (en este mismo envío).
+          3. Si TODOS fallan → notification_backup (emergencia).
+
+        Args:
+            chat_info: Diccionario con información del chat.
+            whatsapp_service: Instancia de WhatsAppService.
+            mensajes_completos: Lista de textos leídos (opcional).
+            rr_state: dict mutable compartido entre threads:
+                      {"idx": int, "lock": threading.Lock()}
+                      Si es None se crea uno local (sin distribución entre perfiles).
+
+        Returns:
+            True si al menos un destino aceptó la notificación.
+        """
+        import threading
+
+        if not self.notification_targets and not self.notification_backup:
+            print("[Monitor] ⚠️ No hay destino de notificación configurado")
+            return False
+
+        # ── Construir mensaje ─────────────────────────────────────────────────
+        contenido = "\n".join(mensajes_completos) if mensajes_completos \
+                    else f"Preview: {chat_info['preview']}"
+        mensaje = (
+            f"Perfil: {self.profile_name}\n"
+            f"Nombre: {chat_info['nombre']}\n"
+            f"Hora: {chat_info['hora']}\n"
+            f"Detectado: {chat_info['timestamp']}\n"
+            f"\n--- MENSAJES ---\n{contenido}"
+        )
+        mensaje_limpio = self.limpiar_mensaje(mensaje)
+        print(f"\n[Monitor] 📤 Notificación sobre: {chat_info['nombre']}")
+
+        targets = self.notification_targets
+        n = len(targets)
+
+        if n == 0:
+            # Sin targets primarios → ir directo al backup
+            pass
+        else:
+            # Estado round-robin local si no se proporcionó uno externo
+            if rr_state is None:
+                rr_state = {"idx": 0, "lock": threading.Lock()}
+
+            # Tomar índice actual y avanzar (thread-safe)
+            with rr_state["lock"]:
+                start_idx = rr_state["idx"] % n
+                rr_state["idx"] = (start_idx + 1) % n
+
+            # Intentar desde start_idx recorriendo todos los targets
+            for offset in range(n):
+                idx = (start_idx + offset) % n
+                destino = targets[idx]
+                total_targets = n
+                print(f"[Monitor] 🎯 Intento {offset+1}/{total_targets} → '{destino}'")
+                if self._enviar_a_contacto(destino, mensaje_limpio, whatsapp_service):
+                    print(f"[Monitor] ✅ Notificación enviada a '{destino}'")
+                    return True
+                print(f"[Monitor] ⚠️ Falló '{destino}', probando siguiente...")
+
+            print("[Monitor] ⚠️ Todos los destinos primarios fallaron.")
+
+        # ── RESPALDO DE EMERGENCIA ────────────────────────────────────────────
+        if self.notification_backup:
+            print(f"[Monitor] 🆘 Usando respaldo de emergencia: '{self.notification_backup}'")
+            if self._enviar_a_contacto(self.notification_backup, mensaje_limpio, whatsapp_service):
+                print(f"[Monitor] ✅ Notificación enviada al respaldo '{self.notification_backup}'")
+                return True
+            print(f"[Monitor] ❌ Falló también el respaldo '{self.notification_backup}'")
+
+        print("[Monitor] ❌ Todos los intentos fallaron. Notificación perdida.")
+        return False
     
-    def monitorear_y_notificar(self, whatsapp_service, max_time=5, auto_reply_text=None):
+    def monitorear_y_notificar(self, whatsapp_service, max_time=5,
+                                auto_reply_text=None, rr_state=None):
         """
         Monitorea mensajes nuevos y envía notificaciones si los hay.
-        Esta función está diseñada para ser llamada antes de cada envío.
-        
+
         Args:
             whatsapp_service: Instancia de WhatsAppService
             max_time: Tiempo máximo en segundos para el monitoreo (default: 5)
-            auto_reply_text: Texto para respuesta automática (opcional). Si se define, se envía al chat.
-            
+            auto_reply_text: Texto para respuesta automática (opcional).
+            rr_state: dict compartido entre threads para round-robin
+                      {"idx": int, "lock": threading.Lock()}. None = local.
+
         Returns:
             Tiempo usado en el monitoreo (en segundos)
         """
-        if not self.notification_contact:
-            print("[Monitor] Monitor deshabilitado (sin número de notificación)")
-            return 0  # Monitor deshabilitado
-        
+        if not self.notification_targets and not self.notification_backup:
+            print("[Monitor] Monitor deshabilitado (sin destinos de notificación)")
+            return 0
+
+        targets_str = ", ".join(self.notification_targets) if self.notification_targets else "❌ No configurado"
         print(f"\n[Monitor] ═══════════════════════════════════════")
         print(f"[Monitor] Iniciando monitoreo de mensajes nuevos")
-        print(f"[Monitor] Número de notificaciones: {self.notification_contact}")
+        print(f"[Monitor] 🎯 Destinos ({len(self.notification_targets)}): {targets_str}")
+        print(f"[Monitor] 🆘 Respaldo emergencia: {self.notification_backup or '❌ No configurado'}")
         if auto_reply_text:
-            print(f"[Monitor] 🤖 MODO AUTO-RESPUESTA ACTIVO")
-            print(f"[Monitor] Mensaje: '{auto_reply_text}'")
+            print(f"[Monitor] 🤖 MODO AUTO-RESPUESTA ACTIVO: '{auto_reply_text}'")
         print(f"[Monitor] Tiempo máximo: {max_time}s")
         print(f"[Monitor] ═══════════════════════════════════════")
         
@@ -420,7 +571,15 @@ Detectado: {chat_info['timestamp']}
                         break
                     
                     print(f"\n[Monitor] Procesando notificación {idx}/{len(chats_nuevos)}...")
-                    
+
+                    # ── Filtro de grupos: solo procesar chats de usuarios reales ──
+                    # Los contactos reales tienen nombre que comienza con '+' (ej: +57 320 4901850)
+                    # Los grupos tienen nombres de texto (ej: ventas_mkt3, Soporte)
+                    nombre_chat = chat.get('nombre', '')
+                    if not nombre_chat.startswith('+'):
+                        print(f"[Monitor] 🚫 Chat de grupo detectado: '{nombre_chat}' → OMITIENDO (solo se procesan contactos +XX)")
+                        continue
+
                     if not self.marcar_chat_como_leido(chat, close_after=False):
                         print(f"[Monitor] ⚠ No se pudo marcar como leído, continuando...")
                         continue
@@ -428,9 +587,19 @@ Detectado: {chat_info['timestamp']}
                     # PASO 1.5: Contar mensajes de salida para determinar acción
                     num_salidas = self.contar_mensajes_salida()
                     
-                    # PASO 1.6: Leer los mensajes completos
+                    # PASO 1.6: Leer los mensajes completos (con filtro de auto-respuestas)
                     mensajes = self.leer_mensajes_chat_abierto()
-                    
+
+                    # ── Si la lista quedó vacía, todos los mensajes eran auto-respuestas ──
+                    # En ese caso cerrar chat y NO notificar
+                    if not mensajes:
+                        print(f"[Monitor] 🔕 '{nombre_chat}' — solo auto-respuestas detectadas → no notificar")
+                        try:
+                            self.driver.switch_to.active_element.send_keys(Keys.ESCAPE)
+                        except: pass
+                        time.sleep(0.5)
+                        continue
+
                     # ═══════════════════════════════════════════════════════════════
                     # LÓGICA MEJORADA DE AUTO-RESPUESTA Y NOTIFICACIÓN
                     # Basada en el conteo de mensajes de salida en el historial:
@@ -504,7 +673,11 @@ Detectado: {chat_info['timestamp']}
                     
                     # EJECUTAR NOTIFICACIÓN si corresponde
                     if debe_notificar:
-                        resultado = self.enviar_notificacion(chat, whatsapp_service, mensajes_completos=mensajes)
+                        resultado = self.enviar_notificacion(
+                            chat, whatsapp_service,
+                            mensajes_completos=mensajes,
+                            rr_state=rr_state
+                        )
                         if resultado:
                             print(f"[Monitor] ✅ Notificación {idx} enviada exitosamente")
                         else:
@@ -526,77 +699,190 @@ Detectado: {chat_info['timestamp']}
         print(f"[Monitor] ═══════════════════════════════════════\n")
         return elapsed_time
 
+    def _extraer_hora_fila(self, fila):
+        """
+        Extrae y normaliza la hora (H:MM) de una fila de mensaje del chat.
+        Siempre retorna solo 'H:MM' (sin a.m./p.m. ni texto extra) para
+        que la comparación entre mensajes de salida y entrada sea consistente.
+
+        Returns:
+            str con la hora "H:MM" o "" si no se pudo extraer
+        """
+        import re
+
+        def _normalizar(texto):
+            """Extrae solo la parte H:MM de un string como '2:03 p.m.' o '14:03'."""
+            match = re.search(r'(\d{1,2}:\d{2})', texto)
+            return match.group(1) if match else ""
+
+        try:
+            hora_elem = fila.find_element(By.CSS_SELECTOR, "span[dir='auto'].x1c4vz4f")
+            return _normalizar(hora_elem.text.strip())
+        except:
+            pass
+        # Fallback: parsear data-pre-plain-text → "[HH:MM, DD/MM/YYYY] Nombre: "
+        try:
+            copyable = fila.find_element(By.CSS_SELECTOR, "div.copyable-text")
+            pre_text = copyable.get_attribute("data-pre-plain-text") or ""
+            return _normalizar(pre_text)
+        except:
+            pass
+        return ""
+
+
+    def _es_mensaje_salida(self, fila):
+        """
+        Determina si una fila del DOM es un mensaje de salida (enviado por nosotros).
+        Usa múltiples estrategias para compatibilidad con distintas versiones de WhatsApp Web.
+
+        Estrategia 1 (nueva): data-testid="tail-out"  (la cola visual del globo saliente)
+        Estrategia 2 (legacy): div.message-out  (clase CSS clásica)
+        Estrategia 3: data-pre-plain-text que contenga el nombre del perfil reconocido
+
+        Returns:
+            True si es mensaje saliente, False en caso contrario.
+        """
+        try:
+            # Estrategia 1: tail-out (WhatsApp Web moderno)
+            if fila.find_elements(By.CSS_SELECTOR, '[data-testid="tail-out"]'):
+                return True
+            # Estrategia 2: clase legacy
+            if fila.find_elements(By.CSS_SELECTOR, 'div.message-out'):
+                return True
+            # Estrategia 3: msg-container con aria-label "Tú"
+            elem = fila.find_elements(By.CSS_SELECTOR, 'span[aria-label="Tú:"]')
+            if elem:
+                return True
+        except:
+            pass
+        return False
+
+    def _es_mensaje_entrada(self, fila):
+        """
+        Determina si una fila del DOM es un mensaje entrante (del cliente).
+
+        Estrategia 1 (nueva): data-testid="tail-in"
+        Estrategia 2 (legacy): div.message-in
+
+        Returns:
+            True si es mensaje entrante, False en caso contrario.
+        """
+        try:
+            if fila.find_elements(By.CSS_SELECTOR, '[data-testid="tail-in"]'):
+                return True
+            if fila.find_elements(By.CSS_SELECTOR, 'div.message-in'):
+                return True
+        except:
+            pass
+        return False
+
+    def _extraer_texto_mensaje(self, fila):
+        """
+        Extrae el texto de un mensaje en una fila del DOM.
+        Prueba múltiples selectores en orden de especificidad.
+
+        Returns:
+            str con el texto del mensaje, o cadena vacía si no se encontró.
+        """
+        selectores = [
+            'span[data-testid="selectable-text"]',  # WhatsApp moderno
+            'span.copyable-text',                    # selector legacy
+            'div.copyable-text',                     # contenedor legacy
+        ]
+        for sel in selectores:
+            try:
+                elem = fila.find_element(By.CSS_SELECTOR, sel)
+                texto = elem.text.strip()
+                if texto:
+                    return texto
+            except:
+                continue
+        # Último recurso: texto completo de la fila
+        try:
+            return fila.text.strip()
+        except:
+            return ""
+
     def leer_mensajes_chat_abierto(self):
         """
         Lee los mensajes del chat abierto actualmente.
         Recorre de abajo hacia arriba hasta encontrar el último mensaje enviado por nosotros (outgoing).
         Captura todos los mensajes entrantes (incoming) posteriores a ese.
-        
+
+        FILTRO DE RESPUESTAS AUTOMÁTICAS (doble condición):
+        Un mensaje entrante se omite SOLO si cumple AMBAS condiciones:
+          1. Su hora (HH:MM) es igual a la hora del último mensaje de salida
+          2. El texto tiene 70 caracteres o menos
+        Si solo se cumple una condición, el mensaje se incluye (es respuesta real).
+
         LÍMITE: Si no se encuentra mensaje de salida, solo lee los últimos 5 mensajes.
-        
+
         Returns:
             Lista de mensajes (texto) ordenados cronológicamente
         """
         try:
             print("[Monitor] Leyendo mensajes del chat abierto...")
-            # Buscar todos los contenedores de mensajes (filas)
-            # Usamos un selector general para filas de mensajes
             filas = self.driver.find_elements(By.CSS_SELECTOR, "div[role='row']")
-            
+
             mensajes_nuevos = []
-            MAX_MENSAJES_SIN_SALIDA = 5  # Límite si no hay mensaje de salida
-            
-            # Recorrer de abajo hacia arriba (más reciente a más antiguo)
+            MAX_MENSAJES_SIN_SALIDA = 5
+
+            # ── Paso 1: Encontrar la hora del ÚLTIMO mensaje de salida ──────────
+            hora_ultimo_salida = ""
             for fila in reversed(filas):
                 try:
-                    # Verificar si es mensaje de salida (nuestro)
-                    es_salida = fila.find_elements(By.CSS_SELECTOR, "div.message-out")
-                    if es_salida:
-                        # Encontramos el último mensaje que enviamos, paramos aquí
+                    if self._es_mensaje_salida(fila):
+                        hora_ultimo_salida = self._extraer_hora_fila(fila)
+                        print(f"[Monitor] 🕐 Hora del último mensaje enviado: '{hora_ultimo_salida}'")
+                        break
+                except:
+                    continue
+
+            # ── Paso 2: Leer mensajes entrantes posteriores al de salida ────────
+            for fila in reversed(filas):
+                try:
+                    # Detenerse al encontrar el último mensaje de salida
+                    if self._es_mensaje_salida(fila):
                         print("[Monitor] Encontrado último mensaje enviado por nosotros. Deteniendo lectura.")
                         break
-                    
-                    # Verificar si es mensaje de entrada (del cliente)
-                    es_entrada = fila.find_elements(By.CSS_SELECTOR, "div.message-in")
-                    if es_entrada:
-                        # Extraer texto
-                        try:
-                            # Intentar buscar el texto copiable
-                            texto_elem = fila.find_element(By.CSS_SELECTOR, "span.copyable-text")
-                            texto = texto_elem.text
-                        except:
-                            # Fallback: intentar buscar cualquier span con texto
-                            texto = fila.text
-                        
-                        # Extraer hora (opcional, pero útil)
-                        try:
-                            hora_elem = fila.find_element(By.CSS_SELECTOR, "span[dir='auto'].x1c4vz4f") # Ajustar selector si es necesario
-                            hora = hora_elem.text
-                        except:
-                            hora = ""
-                            
-                        # Limpiar y agregar
+
+                    if self._es_mensaje_entrada(fila):
+                        texto = self._extraer_texto_mensaje(fila)
+                        hora_entrada = self._extraer_hora_fila(fila)
+
                         if texto:
-                            # Opcional: Limpiar saltos de línea extra
-                            texto = texto.strip()
-                            if texto:
-                                mensajes_nuevos.append(f"[{hora}] {texto}" if hora else texto)
-                                
-                                # LÍMITE: Si ya tenemos MAX_MENSAJES_SIN_SALIDA mensajes y no hemos encontrado salida, detenemos
-                                if len(mensajes_nuevos) >= MAX_MENSAJES_SIN_SALIDA:
-                                    print(f"[Monitor] Alcanzado límite de {MAX_MENSAJES_SIN_SALIDA} mensajes sin encontrar mensaje de salida. Deteniendo lectura.")
-                                    break
-                            
-                except Exception as e:
-                    # Si falla leer una fila, continuamos con la siguiente
+                            # Filtro A: Misma hora + >= 70 chars -> auto-respuesta
+                            # Filtro B: >= 200 chars -> plantilla empresa (solo en mensajes IN)
+                            hora_igual = (hora_ultimo_salida != "" and hora_entrada == hora_ultimo_salida)
+                            es_largo_normal = len(texto) >= 70
+                            es_extremadamente_largo = len(texto) >= 200
+
+                            if hora_igual and es_largo_normal:
+                                print("[Monitor] Auto-respuesta (hora igual, " + str(len(texto)) + " chars) OMITIENDO")
+                                continue
+
+                            if es_extremadamente_largo:
+                                print("[Monitor] Plantilla empresa entrante (" + str(len(texto)) + " chars >= 200) OMITIENDO")
+                                continue
+
+                            if hora_igual and not es_largo_normal:
+                                print("[Monitor] Hora igual pero corto (" + str(len(texto)) + " chars) -> respuesta real")
+
+                            mensajes_nuevos.append("[" + hora_entrada + "] " + texto if hora_entrada else texto)
+
+                            if len(mensajes_nuevos) >= MAX_MENSAJES_SIN_SALIDA and not hora_ultimo_salida:
+                                print("[Monitor] Limite alcanzado. Deteniendo.")
+                                break
+
+                except Exception:
                     continue
-            
-            # Invertir la lista para tener orden cronológico (antiguo -> reciente)
+
+            # Invertir para orden cronológico (antiguo → reciente)
             mensajes_nuevos.reverse()
-            
+
             print(f"[Monitor] Leídos {len(mensajes_nuevos)} mensajes nuevos del cliente.")
             return mensajes_nuevos
-            
+
         except Exception as e:
             print(f"[Monitor] Error al leer mensajes del chat: {e}")
             return []
@@ -605,22 +891,20 @@ Detectado: {chat_info['timestamp']}
         """
         Cuenta el número total de mensajes de salida (enviados por nosotros) en el chat actual.
         Esto permite determinar el nivel de interacción con el chat.
+        Usa _es_mensaje_salida() para compatibilidad con la versión actual de WhatsApp Web.
         
         Returns:
             int: Número de mensajes de salida encontrados
         """
         try:
             print("[Monitor] Contando mensajes de salida...")
-            # Buscar TODOS los contenedores de mensajes
             filas = self.driver.find_elements(By.CSS_SELECTOR, "div[role='row']")
             
             contador_salida = 0
             
             for fila in filas:
                 try:
-                    # Verificar si es mensaje de salida (nuestro)
-                    es_salida = fila.find_elements(By.CSS_SELECTOR, "div.message-out")
-                    if es_salida:
+                    if self._es_mensaje_salida(fila):
                         contador_salida += 1
                 except:
                     continue
