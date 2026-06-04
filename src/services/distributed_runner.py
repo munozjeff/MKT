@@ -13,6 +13,7 @@ from .report_service import ReportService
 from ..utils.message_templates import generate_random_message, replace_variables
 from ..models.campaign import Campaign
 from ..utils.file_utils import verify_pdf_file
+from .human_simulator import HumanSimulator, RateLimiter
 
 class DistributedAutomationRunner:
     """Clase para coordinar el envío distribuido entre múltiples navegadores."""
@@ -43,6 +44,9 @@ class DistributedAutomationRunner:
         # Lista de instancias de servicios activos (para cleanup)
         self.active_services = []
         self.active_services_lock = threading.Lock()
+
+        # Round-robin compartido entre todos los workers
+        self.rr_state = {"idx": 0, "lock": threading.Lock()}
         
     def start(self):
         """Inicia la ejecución distribuida en un hilo maestro."""
@@ -89,23 +93,41 @@ class DistributedAutomationRunner:
                 print(f"[{profile.name}] Falló al iniciar driver")
                 return
                 
-            # 2. Verificar Login
-            print(f"[{profile.name}] Esperando login...")
-            if not self._wait_for_login(service):
-                print(f"[{profile.name}] Timeout login")
+            # 2. Verificar Login / Detectar QR de bloqueo
+            print(f"[{profile.name}] Verificando sesión...")
+            if not self._wait_for_login(service, profile):
+                print(f"[{profile.name}] Login fallido o QR detectado — worker omitido.")
                 return
 
             print(f"[{profile.name}] Listo para enviar.")
-            
-            # Inicializar monitor si está configurado
-            monitor_phone = self.config.get("monitor_phone", "")
-            if monitor_phone:
+
+            # ── Simulador Humano: configurar por worker ──────────────────────────
+            hs_cfg = self.config.get("human_sim")
+            sim = None
+            rate_limiter = None
+            if hs_cfg:
+                sim = HumanSimulator(service.driver, hs_cfg)
+                sim.inyectar_fingerprints()
+                rate_limiter = RateLimiter(
+                    int(hs_cfg.get("msgs_per_window", 7)),
+                    int(hs_cfg.get("window_minutes", 10))
+                )
+                sim.calentar_sesion()
+
+            monitor_targets = self.config.get("monitor_targets") or []
+            monitor_backup  = self.config.get("monitor_backup", "")
+            if not monitor_targets:
+                legacy = self.config.get("monitor_group", "")
+                if legacy:
+                    monitor_targets = [legacy]
+            if monitor_targets or monitor_backup:
                 monitor_service = WhatsAppMonitorService(
                     driver=service.driver,
-                    notification_contact=monitor_phone,
+                    notification_targets=monitor_targets,
+                    notification_backup=monitor_backup or None,
                     profile_name=profile.name
                 )
-                print(f"[{profile.name}] 📱 Monitor activado - Notificaciones a: {monitor_phone}")
+                print(f"[{profile.name}] 📱 Monitor activado — 🎯 Destinos: {monitor_targets} | 🆘 Respaldo: '{monitor_backup or '—'}'")
             
             # 3. Procesar cola
             while not self.phone_queue.empty() and not self.stop_event.is_set():
@@ -113,33 +135,69 @@ class DistributedAutomationRunner:
                     current_phone = self.phone_queue.get_nowait()
                 except queue.Empty:
                     break
-                
-                # MONITOREAR MENSAJES NUEVOS ANTES DE CADA ENVÍO
+
+                # Horario activo (Simulador Humano)
+                if sim:
+                    sim.esperar_si_fuera_horario()
+                if self.stop_event.is_set():
+                    break
+
+                # Rate Limiter (Simulador Humano)
+                if sim and rate_limiter:
+                    espera = rate_limiter.tiempo_hasta_siguiente()
+                    if espera > 0:
+                        t0 = time.time()
+                        while time.time() - t0 < espera:
+                            if self.stop_event.is_set():
+                                break
+                            restante = espera - (time.time() - t0)
+                            sim.scroll_idle(min(restante, 4))
+                if self.stop_event.is_set():
+                    break
+
+                # MONITOREAR MENSAJES NUEVOS ANTES DE CADA ENVIO
                 monitor_time = 0
                 if monitor_service:
                     try:
                         base_interval = int(self.config.get("interval", 20))
-                        max_monitor_time = min(30, base_interval // 2)  # Máximo 30 seg para procesar múltiples chats
-                        auto_reply_text = self.config.get("auto_reply_text") # Nuevo
+                        max_monitor_time = min(30, base_interval // 2)
+                        auto_reply_text = self.config.get("auto_reply_text")
                         monitor_time = monitor_service.monitorear_y_notificar(
-                            service, 
+                            service,
                             max_time=max_monitor_time,
-                            auto_reply_text=auto_reply_text
+                            auto_reply_text=auto_reply_text,
+                            rr_state=self.rr_state
                         )
                         if monitor_time > 0:
-                            print(f"[{profile.name}] ⏱ Tiempo de monitoreo: {monitor_time:.1f}s")
+                            print(f"[{profile.name}] Tiempo de monitoreo: {monitor_time:.1f}s")
                     except Exception as e:
                         print(f"[{profile.name}] Error en monitoreo: {e}")
-                    
-                self._process_single_message(service, current_phone, profile.name)
-                
-                # Pausa entre mensajes (con algo de aleatoriedad individual)
+
+                self._process_single_message(service, current_phone, profile.name, sim)
+
+                # Registrar envio en rate limiter
+                if rate_limiter:
+                    rate_limiter.registrar_envio()
+
+                # Pausa larga si corresponde (Simulador Humano)
+                if sim:
+                    sim.pausa_larga_si_toca()
+
+                # Pausa entre mensajes
                 if not self.stop_event.is_set():
                     base_interval = int(self.config.get("interval", 20))
-                    # Restar el tiempo del monitoreo
                     adjusted_interval = max(1, base_interval - int(monitor_time))
-                    sleep_time = random.uniform(adjusted_interval * 0.8, adjusted_interval * 1.2)
-                    time.sleep(sleep_time)
+                    if sim:
+                        sleep_time = random.uniform(adjusted_interval * 0.7, adjusted_interval * 1.5)
+                        t0 = time.time()
+                        while time.time() - t0 < sleep_time:
+                            if self.stop_event.is_set():
+                                break
+                            restante = sleep_time - (time.time() - t0)
+                            sim.scroll_idle(min(restante, 3))
+                    else:
+                        sleep_time = random.uniform(adjusted_interval * 0.8, adjusted_interval * 1.2)
+                        time.sleep(sleep_time)
                     
         except Exception as e:
             print(f"[{profile.name}] Error crítico en worker: {e}")
@@ -149,15 +207,35 @@ class DistributedAutomationRunner:
                 if service in self.active_services:
                     self.active_services.remove(service)
 
-    def _wait_for_login(self, service):
-        """Espera hasta 60s por login."""
-        for _ in range(60):
+    def _wait_for_login(self, service, profile) -> bool:
+        """
+        Espera hasta que el usuario inicie sesión.
+        En el contexto de ENVÍO: si detecta QR inmediatamente, marca el perfil
+        como BLOQUEADO y aborta este worker.
+        """
+        # Dar tiempo a que WhatsApp Web cargue antes de verificar
+        time.sleep(4)
+
+        # --- DETECCIÓN INMEDIATA DE QR (Perfil Bloqueado en contexto de Envío) ---
+        if service.is_qr_visible():
+            print(f"[{profile.name}] ⛔ QR detectado al inicio → marcando BLOQUEADO y descartando.")
+            try:
+                if "BLOQUEADO" not in profile.tags:
+                    profile.tags.append("BLOQUEADO")
+                    profile.save_metadata()
+                    print(f"[{profile.name}] ✅ Etiqueta BLOQUEADO guardada.")
+            except Exception as e:
+                print(f"[{profile.name}] ❌ Error guardando etiqueta BLOQUEADO: {e}")
+            return False
+
+        # Sin QR: esperar login normal (~56s restantes)
+        for _ in range(56):
             if self.stop_event.is_set(): return False
             if service.is_logged_in(): return True
             time.sleep(1)
         return False
 
-    def _process_single_message(self, service, phone, profile_name):
+    def _process_single_message(self, service, phone, profile_name, sim=None):
         """Procesa un solo mensaje usando el servicio dado."""
         status = "Fallido"
         
@@ -251,30 +329,46 @@ class DistributedAutomationRunner:
                         if self.campaign.image:
                             image_path = self.campaign.image
                 
-                # Flujo de Envío Diferenciado
+                # Flujo de Envio Diferenciado
                 from selenium.webdriver.common.keys import Keys
+                if sim:
+                    sim.micro_pausa()
                 if image_path and os.path.exists(image_path):
                     # 1. Adjuntar imagen
                     if service.attach_file(image_path):
                         # 2. Si hay texto, enviarlo como comentario (caption)
                         if message_text:
-                            # Al adjuntar, el foco suele ir al campo de comentario
-                            for line in message_text.split('\n'):
-                                service.driver.switch_to.active_element.send_keys(line)
-                                service.driver.switch_to.active_element.send_keys(Keys.SHIFT + Keys.ENTER)
-                        
+                            if sim:
+                                try:
+                                    caption = service.driver.switch_to.active_element
+                                    sim.escribir_como_humano(caption, message_text)
+                                except Exception:
+                                    for line in message_text.split('\n'):
+                                        service.driver.switch_to.active_element.send_keys(line)
+                                        service.driver.switch_to.active_element.send_keys(Keys.SHIFT + Keys.ENTER)
+                            else:
+                                for line in message_text.split('\n'):
+                                    service.driver.switch_to.active_element.send_keys(line)
+                                    service.driver.switch_to.active_element.send_keys(Keys.SHIFT + Keys.ENTER)
+
                         # 3. Enviar todo (Imagen + Texto)
                         service.send_attached_file()
                     else:
                         # Fallback si falla adjuntar: enviar solo texto
                         if message_text:
-                            service.send_text_message(message_text)
-                            service.send_message_simple()
+                            if sim:
+                                sim.enviar_mensaje_humano(service, message_text)
+                            else:
+                                service.send_text_message(message_text)
+                                service.send_message_simple()
                 else:
                     # Flujo Solo Texto
                     if message_text:
-                        service.send_text_message(message_text)
-                        service.send_message_simple()
+                        if sim:
+                            sim.enviar_mensaje_humano(service, message_text)
+                        else:
+                            service.send_text_message(message_text)
+                            service.send_message_simple()
                     
                 status = "Enviado"
                 if attempt_index > 0:

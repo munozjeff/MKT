@@ -1,8 +1,8 @@
 {
-    "version": "1.2.6",
-    "build": "20260220",
-    "release_date": "2026-02-20",
-    "release_notes": "- Exportación de números pendientes a Excel al finalizar el envío\\n- Detección de columna 'Celular' insensible a mayúsculas/minúsculas al cargar listas\\n- Nuevo componente monitor_view.py para la vista de monitoreo\\n- Mejoras en whatsapp_monitor_service.py y send_view.py\\n- Actualización de componentes UI (app.py, __init__.py)",
+    "version": "1.6.20",
+    "build": "20260514",
+    "release_date": "2026-05-14",
+    "release_notes": "- NUEVO: Monitor multi-destino con distribucion round-robin thread-safe\\n- Multiples grupos o numeros de notificacion (lista separada por linea o coma)\\n- Interfaz: campo de destinos multilinea con boton [+] para agregar rapidamente\\n- Round-robin global compartido entre todos los workers/perfiles concurrentes\\n- Respaldo de emergencia solo se activa si TODOS los destinos primarios fallan\\n- Retrocompatibilidad: configuraciones antiguas con monitor_group unico siguen funcionando\\n- Logs mejorados: muestra lista de destinos activos y estado de cada intento",
     "update_url": "https://raw.githubusercontent.com/munozjeff/MKT/main/version.json",
     "download_url": "https://github.com/munozjeff/MKT/archive/refs/heads/main.zip"
 }

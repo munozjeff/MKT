@@ -41,10 +41,22 @@ class MonitorRunner:
         self.simultaneous = config.get("simultaneous", 1)
         self.interval = config.get("interval", 20)
         self.auto_reply_text = config.get("auto_reply_text")
-        self.monitor_contact = config.get("monitor_contact")  # Número/grupo para notificaciones
+        # Destinos de notificación: lista de targets primarios + respaldo de emergencia
+        monitor_targets = config.get("monitor_targets") or []
+        monitor_backup  = config.get("monitor_backup")
+        # Retrocompatibilidad con versiones anteriores
+        if not monitor_targets:
+            legacy = config.get("monitor_group") or config.get("monitor_contact")
+            if legacy:
+                monitor_targets = [legacy]
+        self.monitor_targets = monitor_targets
+        self.monitor_backup  = monitor_backup
+        # Round-robin compartido entre todos los threads del monitor
+        import threading as _thr
+        self.rr_state = {"idx": 0, "lock": _thr.Lock()}
         self.running = True
         self.active_profiles = {}  # {thread_id: (profile, service)}
-        
+
         print(f"\n{'═'*60}")
         print(f"🔍 MODO MONITOR INICIADO")
         print(f"{'═'*60}")
@@ -52,7 +64,8 @@ class MonitorRunner:
         print(f"Navegadores simultáneos: {self.simultaneous}")
         print(f"Intervalo de monitoreo: {self.interval}s")
         print(f"Auto-respuesta: {'✅ Activada' if self.auto_reply_text else '❌ Desactivada'}")
-        print(f"Notificaciones a: {self.monitor_contact if self.monitor_contact else '❌ Sin configurar'}")
+        print(f"🎯 Destinos notif. ({len(self.monitor_targets)}): {self.monitor_targets or '❌ Sin configurar'}")
+        print(f"🆘 Respaldo emergencia: {self.monitor_backup or '❌ Sin configurar'}")
         print(f"{'═'*60}\n")
     
     def run(self):
@@ -145,10 +158,11 @@ class MonitorRunner:
                 print(f"[{profile_name}] ❌ Error al inicializar servicio")
                 return
             
-            # Crear monitor con el nombre del perfil y número de notificación
+            # Crear monitor con el nombre del perfil y destinos de notificación
             monitor = WhatsAppMonitorService(
                 service.driver,
-                notification_contact=self.monitor_contact,
+                notification_targets=self.monitor_targets,
+                notification_backup=self.monitor_backup,
                 profile_name=profile_name
             )
             
@@ -172,7 +186,8 @@ class MonitorRunner:
                     monitor.monitorear_y_notificar(
                         service,
                         max_time=30,
-                        auto_reply_text=self.auto_reply_text
+                        auto_reply_text=self.auto_reply_text,
+                        rr_state=self.rr_state
                     )
                 except Exception as e:
                     print(f"[{profile_name}] ⚠️ Error en monitoreo: {e}")

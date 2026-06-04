@@ -60,7 +60,8 @@ BTN_CANCEL = "Cancelar"
 
 # Opciones de combobox
 CAMPAIGN_TYPES = ["Predeterminada", "Personalizada", "Default"]
-MESSAGE_TYPES = ["Simple", "Facturas", "Anti Spam"]
+MESSAGE_TYPES = ["Simple", "Facturas", "Anti Spam", "Simulador Humano"]
+
 BASE_TYPES = ["Original", "Con Intervalos"]
 
 # Mensajes

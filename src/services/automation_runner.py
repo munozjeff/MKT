@@ -60,16 +60,35 @@ class AutomationRunner:
                 
                 raise Exception("Fallo inicio navegador (Perfil BLOQUEADO)")
             
-            # 2. Esperar login
+            # 2. Verificar estado de sesión al inicio (contexto de ENVÍO)
+            if self.progress_callback:
+                self.progress_callback(0, len(self.phone_numbers), "Verificando sesión...")
+
+            # Dar un momento a que WhatsApp Web cargue completamente
+            time.sleep(4)
+
+            # --- DETECCIÓN INMEDIATA DE QR (Perfil Bloqueado en contexto de Envío) ---
+            # Si el QR aparece inmediatamente al abrir el navegador en un envío,
+            # es señal de que la sesión fue cerrada (perfil bloqueado por WhatsApp).
+            # En este contexto NO esperamos al usuario: marcamos BLOQUEADO y abortamos.
+            if self.whatsapp_service.is_qr_visible():
+                if self.progress_callback:
+                    self.progress_callback(0, len(self.phone_numbers), f"⛔ QR detectado al inicio — Perfil BLOQUEADO")
+                print(f"[{self.profile.name}] QR detectado inmediatamente en contexto de envío → marcando BLOQUEADO.")
+                try:
+                    if "BLOQUEADO" not in self.profile.tags:
+                        self.profile.tags.append("BLOQUEADO")
+                        self.profile.save_metadata()
+                        print(f"[{self.profile.name}] ✅ Etiqueta BLOQUEADO guardada.")
+                except Exception as tag_err:
+                    print(f"[{self.profile.name}] ❌ Error guardando etiqueta: {tag_err}")
+                raise Exception("QR detectado al inicio de envío — Perfil BLOQUEADO")
+
+            # Si no hay QR, esperar login normal (máx 5 min)
             if self.progress_callback:
                 self.progress_callback(0, len(self.phone_numbers), "Esperando inicio de sesión...")
-                
-            # Loop simple para esperar login (el usuario debe escanear QR si no está logueado)
-            # En la versión original había un messagebox, aquí asumimos que el usuario lo ve en la UI principal
-            # o que verificamos el login periódicamente.
-            # Para simplificar, esperamos un tiempo o checkeamos en loop
-            
-            max_wait = 300 # 5 min max para login inicial
+
+            max_wait = 300  # 5 min max para login inicial
             start_wait = time.time()
             while not self.stop_event.is_set():
                 if self.whatsapp_service.is_logged_in():
@@ -82,15 +101,24 @@ class AutomationRunner:
                 return
                 
             # Inicializar el monitor de mensajes si está configurado
-            monitor_phone = self.config.get("monitor_phone", "")
-            if monitor_phone:
+            monitor_targets = self.config.get("monitor_targets") or []
+            monitor_backup  = self.config.get("monitor_backup", "")
+            # Retrocompatibilidad: si no hay targets pero sí monitor_group, usarlo
+            if not monitor_targets:
+                legacy = self.config.get("monitor_group", "")
+                if legacy:
+                    monitor_targets = [legacy]
+            if monitor_targets or monitor_backup:
+                self.rr_state = {"idx": 0, "lock": threading.Lock()}
                 self.monitor_service = WhatsAppMonitorService(
                     driver=self.whatsapp_service.driver,
-                    notification_contact=monitor_phone,
+                    notification_targets=monitor_targets,
+                    notification_backup=monitor_backup or None,
                     profile_name=self.profile.name
                 )
-                print(f"📱 Monitor de mensajes activado - Notificaciones a: {monitor_phone}")
+                print(f"📱 Monitor activado — 🎯 Destinos: {monitor_targets} | 🆘 Respaldo: '{monitor_backup or '—'}'")
             else:
+                self.rr_state = None
                 print("📱 Monitor de mensajes desactivado")
                 
             # 3. Bucle de envío
@@ -112,7 +140,8 @@ class AutomationRunner:
                         monitor_time = self.monitor_service.monitorear_y_notificar(
                             self.whatsapp_service, 
                             max_time=max_monitor_time,
-                            auto_reply_text=auto_reply_text
+                            auto_reply_text=auto_reply_text,
+                            rr_state=self.rr_state
                         )
                         if monitor_time > 0:
                             print(f"⏱ Tiempo de monitoreo: {monitor_time:.1f}s")

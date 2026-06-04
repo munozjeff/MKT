@@ -168,6 +168,35 @@ class WhatsAppService:
         except:
             return False
 
+    def is_qr_visible(self) -> bool:
+        """
+        Detecta rápidamente si el código QR está visible (sesión no iniciada / perfil bloqueado).
+        NO usa waits largos — es una verificación instantánea.
+        
+        Returns:
+            bool: True si el QR está visible, False si no
+        """
+        try:
+            # 1. Canvas QR
+            if self.driver.find_elements(By.CSS_SELECTOR, "canvas[aria-label*='Scan']"):
+                return True
+            # 2. Landing wrapper (página de login)
+            if self.driver.find_elements(By.CLASS_NAME, "landing-wrapper"):
+                return True
+            # 3. Textos de login
+            login_texts = [
+                "//div[contains(text(), 'Pasos para iniciar sesión')]",
+                "//div[contains(text(), 'Vincular con el número de teléfono')]",
+                "//div[contains(text(), 'Use WhatsApp on your computer')]",
+                "//div[contains(text(), 'To use WhatsApp on your computer')]",
+            ]
+            for xpath in login_texts:
+                if self.driver.find_elements(By.XPATH, xpath):
+                    return True
+            return False
+        except Exception:
+            return False
+
     def is_session_active(self) -> bool:
         """
         Verifica si la sesión está activa buscando indicadores de desconexión (QR, textos de login).
@@ -240,29 +269,38 @@ class WhatsAppService:
                 print(f"Error click new chat: {e}")
     
     def search_contact(self, phone_number: str) -> bool:
-        """Busca un contacto por número de teléfono."""
+        """Busca un contacto por número de teléfono.
+        
+        Detecta simultáneamente dos variantes del campo de búsqueda:
+        - <p> editable (modal 'Nuevo chat')
+        - <input aria-label='Buscar un nombre o número'> (barra lateral)
+        El operador XPath '|' retorna el que aparezca primero.
+        """
         try:
-            # Sin sleep inicial innecesario
-            
-            #input_field = self.wait.until(
-            #    EC.presence_of_element_located((By.XPATH, '//p[@class="selectable-text copyable-text x15bjb6t x1n2onr6"]'))
-            #)
-            input_field = self.wait.until(
-                EC.presence_of_element_located((
-                    By.XPATH, '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
-                ))
-            )
+            short_wait = WebDriverWait(self.driver, 10)
 
-            # Limpiar: Ctrl+A -> Delete es rapido
+            # Un solo wait detecta cualquiera de los dos campos al mismo tiempo
+            try:
+                input_field = short_wait.until(
+                    EC.presence_of_element_located((
+                        By.XPATH,
+                        '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
+                        ' | //input[@data-tab="3" and contains(@class,"html-input")]'
+                    ))
+                )
+            except Exception:
+                print("Error al buscar contacto: no se encontró ningún campo de búsqueda")
+                return False
+
+            # Limpiar: Ctrl+A -> Delete es rápido
             input_field.send_keys(Keys.CONTROL + "a")
             input_field.send_keys(Keys.DELETE)
-            
+
             # Buscar
             input_field.send_keys(phone_number)
-            # Pequeña espera computacional para que WA procese la búsqueda
-            # No podemos eliminarla del todo porque WA tarda en filtrar
-            time.sleep(0.8) 
-            
+            # Pequeña espera para que WA procese y filtre los resultados
+            time.sleep(0.8)
+
             return True
         except Exception as e:
             print(f"Error al buscar contacto: {e}")
@@ -289,11 +327,13 @@ class WhatsAppService:
                 # Esperamos que aparezca la lista de resultados o el mensaje de 'no encontrado'
                 # WA suele mostrar "Contactos en WhatsApp"
                 try:
+                    print("Esperando que se detecte el contacto")
                     short_wait.until(
                         EC.presence_of_element_located((
                             By.XPATH, "//span[contains(text(), 'Contactos en WhatsApp') or contains(text(), 'Usuarios que no están en tus contactos')]"
                         ))
                     )
+                    print("contacto detectado")
                     return True, True, ""
                 except:
                     # Si no aparece lo anterior, quizás es inválido
@@ -303,6 +343,7 @@ class WhatsAppService:
         except Exception as e:
             print(f"Error al verificar contacto: {e}")
             return False, False, str(e)
+    
     
     def handle_connection_error(self):
         """Maneja errores de conexión a Internet."""
@@ -343,47 +384,143 @@ class WhatsAppService:
                 pass
     
     def open_chat(self) -> bool:
-        """Abre el chat del contacto encontrado."""
+        """Abre el chat del contacto encontrado.
+        
+        Detecta simultáneamente dos variantes del campo de búsqueda:
+        - <p> editable (modal 'Nuevo chat')
+        - <input aria-label='Buscar un nombre o número'> (barra lateral)
+        El operador XPath '|' retorna el que aparezca primero.
+        """
         try:
-            # Enter directo en el campo de busqueda suele abrir el primer resultado
-            input_field = self.wait.until(
-                EC.presence_of_element_located((
-                    By.XPATH, '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
-                ))
-            )
+            short_wait = WebDriverWait(self.driver, 10)
+
+            # Un solo wait detecta cualquiera de los dos campos al mismo tiempo
+            try:
+                input_field = short_wait.until(
+                    EC.presence_of_element_located((
+                        By.XPATH,
+                        '//p[contains(@class,"copyable-text") and contains(@class,"x15bjb6t")]'
+                        ' | //input[@data-tab="3" and contains(@class,"html-input")]'
+                    ))
+                )
+            except Exception:
+                print("Error al abrir chat: no se encontró ningún campo de búsqueda")
+                return False
+
+            # Enter abre el primer resultado de la búsqueda
             input_field.send_keys(Keys.ENTER)
-            # Esperar a que cargue el chat (buscar elemento de chat activo)
-            # self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div._ak1q')))
             return True
         except Exception as e:
             print(f"Error al abrir chat: {e}")
             return False
     
-    def send_text_message(self, message: str) -> bool:
-        """Envía un mensaje de texto."""
+#    def send_text_message(self, message: str) -> bool:
+#        """Envía un mensaje de texto."""
+#        try:
+#            # Esperar explícitamente el footer del chat
+#            parent = self.wait.until(
+#                EC.presence_of_element_located(
+#                    (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
+#                )
+#            )
+#            # Input de mensaje
+#            child = parent.find_element(
+#                By.CSS_SELECTOR,
+#                'p.copyable-text.x15bjb6t.x1n2onr6'
+#            )
+#            # Limpieza rápida
+#            child.send_keys(Keys.CONTROL + "a")
+#            child.send_keys(Keys.DELETE)
+#            
+#            # Escritura rápida
+#            paragraphs = message.split('\n')
+#            for paragraph in paragraphs:
+#                child.send_keys(paragraph)
+#                child.send_keys(Keys.SHIFT + Keys.ENTER)
+#            
+#            return True
+#        except Exception as e:
+#            print(f"Error al enviar mensaje de texto: {e}")
+#            return False
+
+    def _get_message_input_box(self):
+        """
+        Localiza el campo de entrada de mensajes del chat abierto.
+        Compatible con versiones nuevas y antiguas de WhatsApp Web.
+
+        Intento 1 — Versión nueva:
+            div[data-testid="conversation-compose-box-input"]
+        Intento 2 — Versión antigua:
+            div._ak1q / div._ak1r  →  p.copyable-text.x15bjb6t.x1n2onr6
+
+        Returns:
+            WebElement del input box si se encontró, None si no.
+        """
+        input_box = None
+
+        # ==========================
+        # 🔹 INTENTO 1: Versión nueva
+        # ==========================
         try:
-            # Esperar explícitamente el footer del chat
-            parent = self.wait.until(
+            input_box = self.wait.until(
                 EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
+                    (By.CSS_SELECTOR, 'div[data-testid="conversation-compose-box-input"]')
                 )
             )
-            # Input de mensaje
-            child = parent.find_element(
-                By.CSS_SELECTOR,
-                'p.copyable-text.x15bjb6t.x1n2onr6'
-            )
-            # Limpieza rápida
-            child.send_keys(Keys.CONTROL + "a")
-            child.send_keys(Keys.DELETE)
-            
-            # Escritura rápida
+        except:
+            pass
+
+        # ==========================
+        # 🔹 INTENTO 2: Versión antigua
+        # ==========================
+        if not input_box:
+            try:
+                parent = self.wait.until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
+                    )
+                )
+                input_box = parent.find_element(
+                    By.CSS_SELECTOR,
+                    'p.copyable-text.x15bjb6t.x1n2onr6'
+                )
+            except:
+                pass
+
+        return input_box
+
+    def send_text_message(self, message: str) -> bool:
+        """Envía un mensaje de texto compatible con múltiples versiones."""
+        try:
+            # ==========================
+            # 🔍 Localizar input box
+            # ==========================
+            input_box = self._get_message_input_box()
+
+            # ==========================
+            # ❌ Si no encontró nada
+            # ==========================
+            if not input_box:
+                raise Exception("No se encontró el input de mensaje en ninguna versión.")
+
+            # ==========================
+            # ✏️ Escritura
+            # ==========================
+            input_box.click()
+
+            input_box.send_keys(Keys.CONTROL + "a")
+            input_box.send_keys(Keys.DELETE)
+
             paragraphs = message.split('\n')
-            for paragraph in paragraphs:
-                child.send_keys(paragraph)
-                child.send_keys(Keys.SHIFT + Keys.ENTER)
-            
+            for i, paragraph in enumerate(paragraphs):
+                input_box.send_keys(paragraph)
+                if i < len(paragraphs) - 1:
+                    input_box.send_keys(Keys.SHIFT + Keys.ENTER)
+
+            input_box.send_keys(Keys.ENTER)
+
             return True
+
         except Exception as e:
             print(f"Error al enviar mensaje de texto: {e}")
             return False
@@ -495,25 +632,167 @@ class WhatsAppService:
     
     def send_message_simple(self) -> bool:
         """
-        Envía un mensaje simple (sin archivo).
-        
+        Presiona Enter en el campo de mensaje para enviar (compatible con todas las versiones).
+
+        Usado como paso final cuando el texto ya fue escrito por send_text_message.
+
         Returns:
             bool: True si se envió correctamente, False si no
         """
         try:
-            # Buscar el campo de entrada
-            parent = self.wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "div._ak1q, div._ak1r")
-                )
-            )
-            child = parent.find_element(By.CSS_SELECTOR,'p.copyable-text.x15bjb6t.x1n2onr6')
-            child.send_keys(Keys.ENTER)
+            input_box = self._get_message_input_box()
+            if not input_box:
+                raise Exception("No se encontró el input de mensaje en ninguna versión.")
+            input_box.send_keys(Keys.ENTER)
             return True
         except Exception as e:
             print(f"Error al enviar mensaje simple: {e}")
             return False
     
+    def extract_whatsapp_phone_number(self) -> str | None:
+        """
+        Extrae el número de teléfono vinculado a la sesión activa de WhatsApp Web.
+
+        Maneja DOS variantes del botón en la navbar:
+
+        Variante A — Botón aria-label="Perfil" (avatar genérico, sin foto de perfil):
+          Click → el panel de perfil abre directamente → buscar span con número.
+
+        Variante B — Botón aria-label="Tú" (tiene foto de perfil):
+          Click → menú desplegable → click en sub-botón "Perfil" → buscar span
+          con número (esta vez está junto al icono data-icon="phone").
+
+        Returns:
+            str | None: Número de teléfono (ej: "+57 321 7166019") o None.
+        """
+        import re
+        try:
+            short_wait = WebDriverWait(self.driver, 8)
+
+            # ── 1. Detectar cuál botón está en la navbar ─────────────────────────
+            profile_btn = None
+            is_tu_button = False
+
+            try:
+                profile_btn = short_wait.until(EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, "button[aria-label='Perfil'][data-navbar-item='true']")
+                ))
+                print("[RenombrePerfil] Botón 'Perfil' (avatar genérico) encontrado.")
+            except:
+                pass
+
+            if not profile_btn:
+                try:
+                    profile_btn = short_wait.until(EC.element_to_be_clickable(
+                        (By.CSS_SELECTOR, "button[aria-label='Tú'][data-navbar-item='true']")
+                    ))
+                    is_tu_button = True
+                    print("[RenombrePerfil] Botón 'Tú' (con foto) encontrado.")
+                except:
+                    pass
+
+            if not profile_btn:
+                print("[RenombrePerfil] No se encontró botón de perfil en la navbar.")
+                return None
+
+            # ── 2. Click en el botón principal ────────────────────────────────
+            profile_btn.click()
+            print(f"[RenombrePerfil] Click en botón '{'Tú' if is_tu_button else 'Perfil'}' realizado.")
+            time.sleep(1.5)
+
+            # ── 3. Variante B: click en sub-botón 'Perfil' ───────────────────────
+            if is_tu_button:
+                try:
+                    sub_btn = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((
+                            By.XPATH,
+                            # Detecta el botón con el texto 'Nombre, foto del perfil...' o el SVG ic-account-circle
+                            "//button[.//span[contains(text(), 'Nombre, foto del perfil')]]"
+                            " | //button[.//*[local-name()='title' and text()='ic-account-circle']]"
+                        ))
+                    )
+                    sub_btn.click()
+                    print("[RenombrePerfil] Click en sub-botón 'Perfil' realizado.")
+                    time.sleep(1.5)
+                except Exception as e:
+                    print(f"[RenombrePerfil] Error buscando sub-botón Perfil: {e}")
+
+            # ── 4. Buscar el número de teléfono en el panel ─────────────────────
+            phone_number = None
+
+            # Estrategia A: span junto al icón de teléfono (Variante B tiene este elemento)
+            try:
+                elems = self.driver.find_elements(
+                    By.XPATH,
+                    "//div[.//*[@data-icon='phone']]//span[starts-with(normalize-space(text()), '+')]"
+                )
+                for el in elems:
+                    text = el.text.strip()
+                    cleaned = text.replace(' ', '').replace('-', '').replace('+', '')
+                    if text.startswith('+') and cleaned.isdigit() and len(cleaned) >= 7:
+                        phone_number = text
+                        print(f"[RenombrePerfil] Número encontrado (icono phone): {phone_number}")
+                        break
+            except Exception as e:
+                print(f"[RenombrePerfil] Estrategia A (icono phone) falló: {e}")
+
+            # Estrategia B: span con --x-fontSize que empiece con '+'
+            if not phone_number:
+                try:
+                    spans = self.driver.find_elements(
+                        By.XPATH,
+                        "//span[contains(@style, '--x-fontSize') and starts-with(normalize-space(text()), '+')]"
+                    )
+                    for span in spans:
+                        text = span.text.strip()
+                        cleaned = text.replace(' ', '').replace('-', '').replace('+', '')
+                        if text.startswith('+') and cleaned.isdigit() and len(cleaned) >= 7:
+                            phone_number = text
+                            print(f"[RenombrePerfil] Número encontrado (--x-fontSize): {phone_number}")
+                            break
+                except Exception as e:
+                    print(f"[RenombrePerfil] Estrategia B (--x-fontSize) falló: {e}")
+
+            # Estrategia C: regex sobre todos los spans (fallback total)
+            if not phone_number:
+                try:
+                    phone_pattern = re.compile(r'^\+[\d\s\-]{7,20}$')
+                    for span in self.driver.find_elements(By.TAG_NAME, "span"):
+                        try:
+                            text = span.text.strip()
+                            if phone_pattern.match(text):
+                                phone_number = text
+                                print(f"[RenombrePerfil] Número encontrado (regex fallback): {phone_number}")
+                                break
+                        except:
+                            continue
+                except Exception as e:
+                    print(f"[RenombrePerfil] Estrategia C (regex) falló: {e}")
+
+            # ── 5. Cerrar el panel con ESC ───────────────────────────────────
+            try:
+                from selenium.webdriver.common.action_chains import ActionChains
+                ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+                time.sleep(0.5)
+            except:
+                pass
+
+            if phone_number:
+                print(f"[RenombrePerfil] Número extraído: {phone_number}")
+            else:
+                print("[RenombrePerfil] No se pudo extraer el número de teléfono.")
+
+            return phone_number
+
+        except Exception as e:
+            print(f"[RenombrePerfil] Error extrayendo número de teléfono: {e}")
+            try:
+                from selenium.webdriver.common.action_chains import ActionChains
+                ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+            except:
+                pass
+            return None
+
     def close_chat(self):
         """Cierra el chat actual."""
         try:
